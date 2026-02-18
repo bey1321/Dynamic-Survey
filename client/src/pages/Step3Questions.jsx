@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useSurvey } from "../state/SurveyContext";
 import { useToast } from "../state/ToastContext";
 
@@ -8,7 +9,7 @@ const TYPE_LABELS = {
   multi_select: "Multi-Select",
   yes_no: "Yes / No",
   open_ended: "Open-Ended",
-  rating: "Rating (1–10)"
+  rating: "Rating (1-10)"
 };
 
 const QUESTION_TYPES = Object.keys(TYPE_LABELS);
@@ -43,12 +44,16 @@ function Step3Questions() {
     questionsState,
     setQuestionsFromAI,
     updateQuestions,
-    approveQuestions
+    approveQuestions,
+    completeQualityCheck,
+    setEvaluations
   } = useSurvey();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [previewing, setPreviewing] = useState(false);
+  const [evaluating, setEvaluating] = useState(false);
+  const navigate = useNavigate();
 
   const questions = questionsState.questions;
   const isApproved = questionsState.approvedVersion > 0;
@@ -96,16 +101,48 @@ function Step3Questions() {
     showToast("Questions approved — Step 4 unlocked.");
   }
 
-  function handleStub() {
-    showToast("Not implemented in this prototype – handled by another team.");
+  async function handleQualityCheck() {
+  if (!questions || questions.length === 0) {
+    showToast("Generate questions first before running quality check.");
+    return;
   }
 
-  /* ---- Editing helpers ---- */
+  setEvaluating(true);
+  try {
+    const res = await fetch("http://localhost:4000/api/evaluate-questions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        questions,
+        topic: surveyDraft?.goal || surveyDraft?.title || "general survey"
+      })
+    });
+    const data = await res.json();
 
-  function commitEdit(index, updatedQuestion) {
-    const next = questions.map((q, i) => (i === index ? updatedQuestion : q));
-    updateQuestions(next);
+    if (data.evaluations) {
+    setEvaluations(data.evaluations);
+    completeQualityCheck();
+    showToast("Quality check complete — see Step 4.");
+    navigate("/step/4-audit"); 
+    } else {
+      showToast("Quality check failed — no results returned.");
+    }
+  } catch (err) {
+    console.error("Quality check failed:", err);
+    showToast("Quality check failed — check server logs.");
+  } finally {
+    setEvaluating(false);
   }
+}
+
+function handleStub() {
+  showToast("Not implemented in this prototype – handled by another team.");
+}
+
+function commitEdit(index, updatedQuestion) {
+  const next = questions.map((q, i) => (i === index ? updatedQuestion : q));
+  updateQuestions(next);
+}
 
   function handleDeleteQuestion(index) {
     const next = questions.filter((_, i) => i !== index).map((q, i) => ({
@@ -172,10 +209,11 @@ function Step3Questions() {
         </button>
         <button
           type="button"
-          onClick={handleStub}
-          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded bg-slate-800 text-white"
+          onClick={handleQualityCheck}
+          disabled={evaluating || !questions || questions.length === 0}
+          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded bg-slate-800 text-white disabled:opacity-50"
         >
-          Run Quality Check
+          {evaluating ? "Checking…" : "Run Quality Check"}
         </button>
         <button
           type="button"

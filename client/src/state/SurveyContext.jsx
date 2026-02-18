@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { HEALTHCARE_EXAMPLE_SURVEY } from "../../../shared/demoData.js";
+import { QUALITY_THRESHOLDS } from "../../../shared/constants";
 
 const STORAGE_KEY = "dynamicSurveyDemoState";
 
@@ -43,6 +44,8 @@ const defaultStepStatus = {
   8: "unlocked"
 };
 
+const defaultEvaluations = [];
+
 function loadInitialState() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -59,14 +62,16 @@ function loadInitialState() {
       surveyDraft: { ...defaultSurveyDraft, ...(parsed.surveyDraft || {}) },
       variableModel: { ...defaultVariableModelState, ...(parsed.variableModel || {}) },
       questionsState: { ...defaultQuestionsState, ...(parsed.questionsState || {}) },
-      stepStatus: { ...defaultStepStatus, ...(parsed.stepStatus || {}) }
+      stepStatus: { ...defaultStepStatus, ...(parsed.stepStatus || {}) },
+      evaluations: parsed.evaluations || []
     };
   } catch {
     return {
       surveyDraft: defaultSurveyDraft,
       variableModel: defaultVariableModelState,
       questionsState: defaultQuestionsState,
-      stepStatus: defaultStepStatus
+      stepStatus: defaultStepStatus,
+      evaluations: []
     };
   }
 }
@@ -76,13 +81,14 @@ export function SurveyProvider({ children }) {
   const [variableModel, setVariableModel] = useState(defaultVariableModelState);
   const [questionsState, setQuestionsState] = useState(defaultQuestionsState);
   const [stepStatus, setStepStatus] = useState(defaultStepStatus);
-
+  const [evaluations, setEvaluations] = useState(defaultEvaluations);
   useEffect(() => {
     const initial = loadInitialState();
     setSurveyDraft(initial.surveyDraft);
     setVariableModel(initial.variableModel);
     setQuestionsState(initial.questionsState);
     setStepStatus(initial.stepStatus);
+    setEvaluations(initial.evaluations);
   }, []);
 
   useEffect(() => {
@@ -90,13 +96,14 @@ export function SurveyProvider({ children }) {
       surveyDraft,
       variableModel,
       questionsState,
-      stepStatus
+      stepStatus,
+      evaluations
     });
     try {
       window.localStorage.setItem(STORAGE_KEY, payload);
     } catch {
     }
-  }, [surveyDraft, variableModel, questionsState, stepStatus]);
+  }, [surveyDraft, variableModel, questionsState, stepStatus, evaluations]);
 
   const globalStatus = useMemo(() => {
     if (variableModel.approvedVersion > 0) {
@@ -224,6 +231,13 @@ export function SurveyProvider({ children }) {
       4: "unlocked"
     }));
   }
+  function completeQualityCheck() {
+  setStepStatus((prev) => ({
+    ...prev,
+    4: "completed",
+    5: prev[5] === "locked" ? "unlocked" : prev[5]
+  }));
+  }
 
   function resetDemoData() {
     setSurveyDraft(defaultSurveyDraft);
@@ -240,12 +254,34 @@ export function SurveyProvider({ children }) {
     return stepStatus[step] === "unlocked" || stepStatus[step] === "completed";
   }
 
+  function hasEvaluationIssues(thresholds = {}) {
+
+  const T = {
+    ...QUALITY_THRESHOLDS,
+    ...thresholds
+  };
+
+  return evaluations.some(e =>
+    e.llm_scores.relevance < T.minLLM ||
+    e.llm_scores.clarity < T.minLLM ||
+    e.llm_scores.answerability < T.minLLM ||
+    e.variable_relevance < T.minVariableRelevance ||
+    e.max_duplicate_similarity > T.maxDuplicate ||
+    e.rule_violations.length > 0 ||
+    (e.response_option_issues?.length ?? 0) > 0 ||
+    e.skip_logic_issue ||
+    e.response_scale_issue
+  );
+}
+
   const value = {
     surveyDraft,
     variableModel,
     questionsState,
     stepStatus,
     globalStatus,
+    evaluations,       
+    setEvaluations,
     saveSurveyDraft,
     loadHealthcareExample,
     setVariableModelFromAI,
@@ -253,8 +289,10 @@ export function SurveyProvider({ children }) {
     setQuestionsFromAI,
     updateQuestions,
     approveQuestions,
+    completeQualityCheck,
     resetDemoData,
-    isStepUnlocked
+    isStepUnlocked,
+    hasEvaluationIssues
   };
 
   return <SurveyContext.Provider value={value}>{children}</SurveyContext.Provider>;
