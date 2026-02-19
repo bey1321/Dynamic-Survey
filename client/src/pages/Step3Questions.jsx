@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSurvey } from "../state/SurveyContext";
 import { useToast } from "../state/ToastContext";
+import { SurveyFlowVisualization } from "../components/SurveyFlowVisualization";
+import { List, Eye, Workflow } from "lucide-react";
 
 const TYPE_LABELS = {
   likert: "Likert",
@@ -44,21 +46,28 @@ function Step3Questions() {
     questionsState,
     setQuestionsFromAI,
     updateQuestions,
-    approveQuestions,
-    evaluations,
+    completeQualityCheck,
     setEvaluations
   } = useSurvey();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [showQualityReport, setShowQualityReport] = useState(false);
+  const [activeTab, setActiveTab] = useState("questions");
+  const [evaluating, setEvaluating] = useState(false);
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
   const navigate = useNavigate();
 
   const questions = questionsState.questions;
-  const isApproved = questionsState.approvedVersion > 0;
+
+  useEffect(() => {
+    if (questions && questions.length > 0) return;
+    if (!variableModel.model) return;
+    handleGenerate();
+  }, []);
 
   async function handleGenerate() {
+    if (loading) return;
     if (!variableModel.model) {
       showToast("Please generate and approve a variable model first.");
       return;
@@ -79,7 +88,7 @@ function Step3Questions() {
 
       if (Array.isArray(data.questions) && data.questions.length > 0) {
         setQuestionsFromAI(data.questions);
-        if (data.evaluations) setEvaluations(data.evaluations);
+        console.log(data.questions)
         showToast("Questions generated successfully.");
       } else {
         showToast("No questions returned. Using fallback.");
@@ -92,19 +101,38 @@ function Step3Questions() {
     }
   }
 
-  function handleApprove() {
-    if (!questions || questions.length === 0) {
-      showToast("Generate questions before approving.");
-      return;
-    }
-    setEditingId(null);
-    approveQuestions();
-    showToast("Questions approved — Step 4 unlocked.");
+  async function handleQualityCheck() {
+  if (!questions || questions.length === 0) {
+    showToast("Generate questions first before running quality check.");
+    return;
   }
 
+  setEvaluating(true);
+  try {
+    const res = await fetch("http://localhost:4000/api/evaluate-questions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        questions,
+        topic: surveyDraft?.goal || surveyDraft?.title || "general survey"
+      })
+    });
+    const data = await res.json();
 
-function handleStub() {
-  showToast("Not implemented in this prototype – handled by another team.");
+    if (data.evaluations) {
+    setEvaluations(data.evaluations);
+    completeQualityCheck();
+    showToast("Quality check complete — see Step 4.");
+    navigate("/step/4-audit"); 
+    } else {
+      showToast("Quality check failed — no results returned.");
+    }
+  } catch (err) {
+    console.error("Quality check failed:", err);
+    showToast("Quality check failed — check server logs.");
+  } finally {
+    setEvaluating(false);
+  }
 }
 
 function commitEdit(index, updatedQuestion) {
@@ -157,145 +185,177 @@ function commitEdit(index, updatedQuestion) {
     }
   }
 
+  function handleDragStart(index) {
+    setDragIndex(index);
+  }
+
+  function handleDragOver(e, index) {
+    e.preventDefault();
+    if (index !== dragOverIndex) setDragOverIndex(index);
+  }
+
+  function handleDrop(index) {
+    if (dragIndex === null || dragIndex === index) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    const next = [...questions];
+    const [moved] = next.splice(dragIndex, 1);
+    next.splice(index, 0, moved);
+    const renumbered = next.map((q, i) => ({ ...q, id: `q${i + 1}` }));
+
+    if (editingId === questions[dragIndex].id) {
+      setEditingId(renumbered[index].id);
+    }
+
+    updateQuestions(renumbered);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleDragEnd() {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  const tabs = [
+    { id: "questions", label: "Questions", icon: <List size={15} /> },
+    { id: "preview",   label: "Preview",   icon: <Eye size={15} /> },
+    { id: "flow",      label: "Flow",      icon: <Workflow size={15} /> },
+  ];
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold" style={{ color: "#1B6B8A" }}>Generate Questions</h2>
-          <p className="text-sm mt-0.5" style={{ color: "#9ab8c0" }}>
-            {isApproved ? `Approved — v${questionsState.approvedVersion}` : "Draft — not yet approved"}
-          </p>
-        </div>
-        {questions && questions.length > 0 && (
-          <span className="text-[11px] font-semibold px-3 py-1 rounded-full" style={{ backgroundColor: "#d0eaea", color: "#1B6B8A" }}>
-            {questions.length} question{questions.length !== 1 ? "s" : ""}
-          </span>
+    <div className="space-y-0">
+
+      {/* Tab bar */}
+      <div className="flex border-b" style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}>
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.id;
+          const disabled = tab.id !== "questions" && (!questions || questions.length === 0);
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => setActiveTab(tab.id)}
+              className="flex items-center justify-between gap-2 px-5 py-3 text-sm font-semibold transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                color: isActive ? "#1B6B8A" : "#9ab8c0",
+                borderBottom: isActive ? "2px solid #1B6B8A" : "2px solid transparent",
+                marginBottom: "-1px",
+                backgroundColor: "transparent",
+              }}
+            >
+              <span className="text-base leading-none">{tab.icon}</span>
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab content */}
+      <div className="pt-5">
+
+        {/* ── Questions tab ── */}
+        {activeTab === "questions" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold" style={{ color: "#1B6B8A" }}>Survey Questions</h2>
+                <p className="text-sm mt-0.5" style={{ color: "#9ab8c0" }}>AI-generated question set</p>
+              </div>
+              {questions && questions.length > 0 && (
+                <span className="text-[11px] font-semibold px-3 py-1 rounded-full" style={{ backgroundColor: "#d0eaea", color: "#1B6B8A" }}>
+                  {questions.length} question{questions.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleQualityCheck}
+                disabled={evaluating || !questions || questions.length === 0}
+                className="inline-flex items-center px-3 py-2 text-xs font-medium rounded-full bg-slate-800 text-white disabled:opacity-50"
+              >
+                {evaluating ? "Checking…" : "Run Quality Check"}
+              </button>
+              <button
+                type="button"
+                onClick={handleAddQuestion}
+                disabled={!questions}
+                className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
+                style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
+                onMouseEnter={e => { if (questions) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+              >
+                + Add Question
+              </button>
+            </div>
+
+            {loading && (
+              <div className="flex items-center gap-2 py-8 justify-center" style={{ color: "#9ab8c0" }}>
+                <span className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full inline-block" />
+                <span className="text-sm">Generating questions…</span>
+              </div>
+            )}
+
+            {!loading && questions && questions.length > 0 && (
+              <div className="space-y-3">
+                {questions.map((q, index) =>
+                  editingId === q.id ? (
+                    <QuestionEditor
+                      key={q.id}
+                      question={q}
+                      index={index}
+                      totalCount={questions.length}
+                      allQuestions={questions}
+                      onSave={(updated) => { commitEdit(index, updated); setEditingId(null); }}
+                      onCancel={() => setEditingId(null)}
+                      onDelete={() => handleDeleteQuestion(index)}
+                      onMove={(dir) => handleMoveQuestion(index, dir)}
+                    />
+                  ) : (
+                    <QuestionCard
+                      key={q.id}
+                      question={q}
+                      index={index}
+                      isDragging={dragIndex === index}
+                      isDragOver={dragOverIndex === index && dragIndex !== index}
+                      onEdit={() => setEditingId(q.id)}
+                      onDelete={() => handleDeleteQuestion(index)}
+                      onDragStart={() => handleDragStart(index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDrop={() => handleDrop(index)}
+                      onDragEnd={handleDragEnd}
+                    />
+                  )
+                )}
+              </div>
+            )}
+
+            {!loading && (!questions || questions.length === 0) && (
+              <div className="rounded-xl border py-12 text-center" style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}>
+                <p className="text-sm" style={{ color: "#9ab8c0" }}>No questions yet. Questions will generate automatically.</p>
+              </div>
+            )}
+          </div>
         )}
+
+        {/* ── Preview tab ── */}
+        {activeTab === "preview" && questions && questions.length > 0 && (
+          <SurveyPreview questions={questions} title={surveyDraft?.title} inline />
+        )}
+
+        {/* ── Flow tab ── */}
+        {activeTab === "flow" && questions && questions.length > 0 && (
+          <div className="rounded-xl border overflow-hidden" style={{ borderColor: "#d0eaea", height: "560px" }}>
+            <SurveyFlowVisualization questions={questions} />
+          </div>
+        )}
+
       </div>
-
-      {/* Action toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        onClick={() => setShowQualityReport(true)}
-        disabled={!evaluations || evaluations.length === 0}
-        className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
-        style={{ borderColor: "#536b6e", color: "#1B6B8A" }}
-        onMouseEnter={e => { if (evaluations?.length) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
-        onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-      >
-        Quality Report
-      </button>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={loading}
-          className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-full text-white transition-colors duration-200 disabled:opacity-50"
-          style={{ backgroundColor: "#1B6B8A" }}
-          onMouseEnter={e => { if (!loading) e.currentTarget.style.backgroundColor = "#2AABBA"; }}
-          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#1B6B8A"; }}
-        >
-          {loading ? "Generating…" : "Generate Questions"}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleStub}
-          className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200"
-          style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
-          onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
-          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-        >
-          Simulation
-        </button>
-        <button
-          type="button"
-          onClick={() => setPreviewing(true)}
-          disabled={!questions || questions.length === 0}
-          className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
-          style={{ borderColor: "#5BBF8E", color: "#2d8c5e" }}
-          onMouseEnter={e => { if (questions?.length) e.currentTarget.style.backgroundColor = "#f0faf5"; }}
-          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-        >
-          Preview
-        </button>
-        <button
-          type="button"
-          onClick={handleAddQuestion}
-          disabled={!questions}
-          className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
-          style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
-          onMouseEnter={e => { if (questions) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
-          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-        >
-          + Add Question
-        </button>
-        <button
-          type="button"
-          onClick={handleApprove}
-          disabled={!questions || questions.length === 0}
-          className="ml-auto flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-full text-white transition-colors duration-200 disabled:opacity-40"
-          style={{ backgroundColor: "#5BBF8E" }}
-          onMouseEnter={e => { if (questions?.length) e.currentTarget.style.backgroundColor = "#3ea873"; }}
-          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#5BBF8E"; }}
-        >
-          Approve Draft
-        </button>
-      </div>
-
-      {/* Questions list */}
-      {loading && (
-        <div className="flex items-center gap-2 py-8 justify-center" style={{ color: "#9ab8c0" }}>
-          <span className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full inline-block" />
-          <span className="text-sm">Generating questions…</span>
-        </div>
-      )}
-
-      {!loading && questions && questions.length > 0 && (
-        <div className="space-y-3">
-          {questions.map((q, index) =>
-            editingId === q.id ? (
-              <QuestionEditor
-                key={q.id}
-                question={q}
-                index={index}
-                totalCount={questions.length}
-                allQuestions={questions}
-                onSave={(updated) => { commitEdit(index, updated); setEditingId(null); }}
-                onCancel={() => setEditingId(null)}
-                onDelete={() => handleDeleteQuestion(index)}
-                onMove={(dir) => handleMoveQuestion(index, dir)}
-              />
-            ) : (
-              <QuestionCard
-                key={q.id}
-                question={q}
-                onEdit={() => setEditingId(q.id)}
-                onDelete={() => handleDeleteQuestion(index)}
-              />
-            )
-          )}
-        </div>
-      )}
-
-      {!loading && (!questions || questions.length === 0) && (
-        <div className="rounded-xl border py-12 text-center" style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}>
-          <p className="text-sm" style={{ color: "#9ab8c0" }}>No questions yet. Click &quot;Generate Questions&quot; to start.</p>
-        </div>
-      )}
-
-      {previewing && questions && questions.length > 0 && (
-        <SurveyPreview questions={questions} title={surveyDraft.title} onClose={() => setPreviewing(false)} />
-      
-      )}
-
-          {showQualityReport && evaluations && evaluations.length > 0 && (
-      <QualityReportOverlay
-        evaluations={evaluations}
-        onClose={() => setShowQualityReport(false)}
-      />
-      )}
     </div>
   );
 }
@@ -304,14 +364,38 @@ function commitEdit(index, updatedQuestion) {
 /*  Read-only question card                                           */
 /* ------------------------------------------------------------------ */
 
-function QuestionCard({ question: q, onEdit, onDelete }) {
+function QuestionCard({ question: q, isDragging, isDragOver, onEdit, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const roleStyle = ROLE_COLORS[q.variableRole] || { bg: "#e8f6f7", text: "#2AABBA" };
   return (
-    <div className="rounded-xl border p-4 group transition-shadow hover:shadow-md" style={{ borderColor: "#d0eaea", backgroundColor: "#ffffff" }}>
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className="rounded-xl border p-4 group transition-all hover:shadow-md"
+      style={{
+        borderColor: isDragOver ? "#2AABBA" : "#d0eaea",
+        backgroundColor: "#ffffff",
+        opacity: isDragging ? 0.4 : 1,
+        borderWidth: isDragOver ? "2px" : "1px",
+        boxShadow: isDragOver ? "0 0 0 2px #2AABBA33" : undefined,
+        cursor: "grab",
+      }}
+    >
       <div className="flex items-start justify-between gap-3 mb-2">
-        <span className="text-sm font-semibold" style={{ color: "#1B6B8A" }}>
-          {q.id.toUpperCase()}. {q.text}
-        </span>
+        <div className="flex items-start gap-2 min-w-0">
+          <span
+            className="text-base shrink-0 mt-0.5 select-none"
+            style={{ color: "#9ab8c0", cursor: "grab", lineHeight: 1 }}
+            title="Drag to reorder"
+          >
+            ⠿
+          </span>
+          <span className="text-sm font-semibold" style={{ color: "#1B6B8A" }}>
+            {q.id.toUpperCase()}. {q.text}
+          </span>
+        </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: "#e8f6f7", color: "#1B6B8A" }}>
             {TYPE_LABELS[q.type] || q.type}
@@ -742,7 +826,7 @@ function QualityReportOverlay({ evaluations, onClose }) {
 /*  Survey preview (interactive, with branching)                      */
 /* ------------------------------------------------------------------ */
 
-function SurveyPreview({ questions, title, onClose }) {
+function SurveyPreview({ questions, title, inline }) {
   const [answers, setAnswers] = useState({});
   const visible = getVisibleQuestions(questions, answers);
 
@@ -760,36 +844,47 @@ function SurveyPreview({ questions, title, onClose }) {
     });
   }
 
+  const header = (
+    <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: "#d0eaea" }}>
+      <div>
+        <h2 className="text-base font-bold" style={{ color: "#1B6B8A" }}>{title || "Survey Preview"}</h2>
+        <p className="text-xs mt-0.5" style={{ color: "#9ab8c0" }}>{visible.length} of {questions.length} questions visible</p>
+      </div>
+      <button type="button" onClick={() => setAnswers({})}
+        className="text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors"
+        style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
+        onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+        onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}>
+        Reset
+      </button>
+    </div>
+  );
+
+  const body = (
+    <div className="px-6 py-5 space-y-4" style={{ backgroundColor: "#f0f8f8" }}>
+      {visible.map((q) => (
+        <PreviewCard key={q.id} question={q} answer={answers[q.id]}
+          onAnswer={(val) => setAnswer(q.id, val)} onToggleMulti={(opt) => toggleMulti(q.id, opt)} />
+      ))}
+    </div>
+  );
+
+  if (inline) {
+    return (
+      <div className="rounded-xl border overflow-hidden" style={{ borderColor: "#d0eaea" }}>
+        <div className="h-1 w-full" style={{ background: "linear-gradient(to right, #5BBF8E, #2AABBA, #1B6B8A)" }} />
+        {header}
+        {body}
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto py-8">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden">
         <div className="h-1 w-full" style={{ background: "linear-gradient(to right, #5BBF8E, #2AABBA, #1B6B8A)" }} />
-        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: "#d0eaea" }}>
-          <div>
-            <h2 className="text-base font-bold" style={{ color: "#1B6B8A" }}>{title || "Survey Preview"}</h2>
-            <p className="text-xs mt-0.5" style={{ color: "#9ab8c0" }}>{visible.length} of {questions.length} questions visible</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setAnswers({})}
-              className="text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors"
-              style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
-              onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
-              onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}>
-              Reset
-            </button>
-            <button type="button" onClick={onClose}
-              className="text-xs font-bold px-3 py-1.5 rounded-full text-white"
-              style={{ backgroundColor: "#1B6B8A" }}>
-              Close
-            </button>
-          </div>
-        </div>
-        <div className="px-6 py-5 space-y-4" style={{ backgroundColor: "#f0f8f8" }}>
-          {visible.map((q) => (
-            <PreviewCard key={q.id} question={q} answer={answers[q.id]}
-              onAnswer={(val) => setAnswer(q.id, val)} onToggleMulti={(opt) => toggleMulti(q.id, opt)} />
-          ))}
-        </div>
+        {header}
+        {body}
       </div>
     </div>
   );
