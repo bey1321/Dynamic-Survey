@@ -11,6 +11,11 @@ import {
   buildQuestionGenUserPrompt
 } from "../shared/promptTemplates.js";
 import { FALLBACK_VARIABLE_MODEL, HEALTHCARE_EXAMPLE_SURVEY, FALLBACK_QUESTIONS } from "../shared/demoData.js";
+import {
+  evaluateQuestions,
+  needRegeneration,
+  buildRegenerationFeedback
+} from "./evaluator.js";
 
 dotenv.config();
 
@@ -126,8 +131,46 @@ app.post("/api/generate-questions", async (req, res) => {
   const { surveyDraft, variableModel } = req.body || {};
 
   try {
-    const result = await callGeminiForQuestions(surveyDraft, variableModel);
-    res.json(result);
+    let result = await callGeminiForQuestions(surveyDraft, variableModel);
+
+    if (!Array.isArray(result.questions) || result.questions.length === 0) {
+      return res.json(result);
+    }
+
+    // ← wrap evaluation in its own try/catch so it never breaks generation
+    try {
+      const topic = surveyDraft?.goal || surveyDraft?.title || "general survey";
+      const evaluations = await evaluateQuestions(topic, result.questions, callGemini);
+
+      if (needRegeneration(evaluations)) {
+        const feedback = buildRegenerationFeedback(evaluations, topic);
+        const improvedResult = await callGeminiForQuestions(
+          { ...surveyDraft, feedback },
+          variableModel
+        );
+        const improvedEvals = await evaluateQuestions(
+          topic,
+          improvedResult.questions || result.questions,
+          callGemini
+        );
+        return res.json({
+          ...improvedResult,
+          evaluations: improvedEvals,
+          regenerated: true
+        });
+      }
+
+      return res.json({
+        ...result,
+        evaluations,
+        regenerated: false
+      });
+
+    } catch (evalErr) {
+      console.error("Evaluation failed, returning questions without eval:", evalErr);
+      return res.json(result); // ← still returns questions even if eval fails
+    }
+
   } catch (err) {
     console.error("Error in /api/generate-questions:", err);
     res.status(500).json(FALLBACK_QUESTIONS);
@@ -162,8 +205,29 @@ app.post("/api/extract-survey-config", async (req, res) => {
   }
 });
 
+app.post("/api/evaluate-questions", async (req, res) => {
+  const { questions, topic } = req.body || {};
+
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return res.status(400).json({ error: "No questions provided" });
+  }
+
+  try {
+    const evaluations = await evaluateQuestions(
+      topic || "general survey",
+      questions,
+      callGemini
+    );
+    res.json({ evaluations });
+  } catch (err) {
+    console.error("Error in /api/evaluate-questions:", err);
+    res.status(500).json({ error: "Evaluation failed" });
+  }
+});
+
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
   console.log(`Server listening on http://localhost:${port}`);
 });
+
 
