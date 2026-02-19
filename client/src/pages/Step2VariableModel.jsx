@@ -6,7 +6,7 @@ import { useStepBase } from "../state/StepNavContext";
 function Step2VariableModel() {
   const navigate = useNavigate();
   const stepBase = useStepBase();
-  const { surveyDraft, variableModel, setVariableModelFromAI, approveVariableModel, isStepUnlocked } = useSurvey();
+  const { surveyDraft, variableModel, setVariableModelFromAI, isStepUnlocked } = useSurvey();
   const [localModel, setLocalModel] = useState({
     dependent: [],
     drivers: [],
@@ -18,16 +18,16 @@ function Step2VariableModel() {
 
   const locked = !isStepUnlocked(2) || !surveyDraft.draftSaved;
 
+
+
   useEffect(() => {
-    setLocalModel({
-      dependent: [],
-      drivers: [],
-      controls: []
-    });
+    if (variableModel?.dependent?.length) return;
+    handleGenerate();
   }, []);
 
+
   function handleGenerate() {
-    if (locked) return;
+    if (locked || loading) return;
     setLoading(true);
     setError("");
 
@@ -93,19 +93,7 @@ function Step2VariableModel() {
     });
   }
 
-  function handleApprove() {
-    const cleaned = {
-      dependent: localModel.dependent.map((s) => s.trim()).filter(Boolean),
-      drivers: localModel.drivers.map((s) => s.trim()).filter(Boolean),
-      controls: localModel.controls.map((s) => s.trim()).filter(Boolean)
-    };
-    approveVariableModel(cleaned);
-  }
-
-  const versionLabel =
-    variableModel.approvedVersion > 0
-      ? `Variable Model Approved (v${variableModel.approvedVersion})`
-      : variableModel.status;
+  const versionLabel = variableModel.status;
 
   const inputCls = "w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-800 outline-none transition-all duration-200 border-[#b0d4dc] bg-white focus:border-[#2AABBA] focus:ring-2 focus:ring-[#2AABBA]/20";
 
@@ -219,30 +207,17 @@ function Step2VariableModel() {
 
       {/* Actions */}
       <div className="flex items-center justify-between pt-2">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleApprove}
-            disabled={locked}
-            className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-full text-white transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ backgroundColor: "#5BBF8E" }}
-            onMouseEnter={e => { if (!locked) e.currentTarget.style.backgroundColor = "#3ea873"; }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#5BBF8E"; }}
-          >
-            Approve Model
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsEditing((prev) => !prev)}
-            disabled={locked}
-            className="text-sm font-semibold px-4 py-2.5 rounded-full border transition-colors duration-200 disabled:opacity-40"
-            style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
-            onMouseEnter={e => { if (!locked) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-          >
-            {isEditing ? "Done Editing" : "Edit"}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setIsEditing((prev) => !prev)}
+          disabled={locked}
+          className="text-sm font-semibold px-4 py-2.5 rounded-full border transition-colors duration-200 disabled:opacity-40"
+          style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
+          onMouseEnter={e => { if (!locked) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+        >
+          {isEditing ? "Done Editing" : "Edit"}
+        </button>
         <button
           type="button"
           onClick={() => navigate(`${stepBase}/3-questions`)}
@@ -262,4 +237,3 @@ function Step2VariableModel() {
 }
 
 export default Step2VariableModel;
-

@@ -40,16 +40,7 @@ function LayoutClean({ children }) {
         </div>
 
         {/* Reset */}
-        <button
-          type="button"
-          onClick={resetDemoData}
-          className="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors duration-200"
-          style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
-          onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#d0eaea"; }}
-          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-        >
-          Reset Data
-        </button>
+
       </header>
 
       {/* Horizontal step progress */}

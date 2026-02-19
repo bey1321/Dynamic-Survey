@@ -1,5 +1,5 @@
 import { pipeline } from "@xenova/transformers";
-import { QUALITY_THRESHOLDS } from "../../shared/constants";
+import { QUALITY_THRESHOLDS } from "../shared/constants.js";
 
 let embedder = null;
 
