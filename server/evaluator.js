@@ -1,5 +1,5 @@
 import { pipeline } from "@xenova/transformers";
-import { QUALITY_THRESHOLDS } from "../../shared/constants";
+import { QUALITY_THRESHOLDS } from "../shared/constants.js";
 
 let embedder = null;
 
@@ -25,8 +25,22 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
-async function variableRelevanceScore(questionText, allVariables) {
-  if (!allVariables || allVariables.length === 0) return 1.0;
+function buildVariablePrompt(variableName, variableRole) {
+  if (variableRole === "control") {
+    return `This is a demographic or background question collecting information about: ${variableName}.`;
+  }
+  if (variableRole === "driver") {
+    return `This question measures a factor that influences the outcome: ${variableName}.`;
+  }
+  if (variableRole === "dependent") {
+    return `This question measures the primary outcome variable: ${variableName}.`;
+  }
+  return `This question measures the variable: ${variableName}.`;
+}
+
+async function variableRelevanceScore(questionText, assignedVariable, variableRole) {
+  if (!assignedVariable) return 1.0;
+
   const model = await getEmbedder();
   if (!model) return 1.0;
 
@@ -34,24 +48,12 @@ async function variableRelevanceScore(questionText, allVariables) {
     const qOut = await model(questionText, { pooling: "mean", normalize: true });
     const qEmb = Array.from(qOut.data);
 
-    let maxScore = 0;
-    for (const variable of allVariables) {
-      if (!variable) continue;
-      const variablePrompt =
-      `This question measures the variable: ${variable}.`;
-
-    const vOut = await model(variablePrompt, {
-      pooling: "mean",
-      normalize: true
-    });
-
+    const prompt = buildVariablePrompt(assignedVariable, variableRole);
+    const vOut = await model(prompt, { pooling: "mean", normalize: true });
     const vEmb = Array.from(vOut.data);
-    const score = cosineSimilarity(qEmb, vEmb);
-    if (score > maxScore) maxScore = score;
-    }
 
-    return maxScore;
-  } catch (err) {
+    return parseFloat(cosineSimilarity(qEmb, vEmb).toFixed(4));
+  } catch {
     return 1.0;
   }
 }
@@ -79,7 +81,8 @@ function fleschReadingEase(text) {
 }
 
 function readabilityScore(questionText) {
-  return parseFloat(fleschReadingEase(questionText).toFixed(2));
+  const score = fleschReadingEase(questionText);
+  return parseFloat(Math.min(100, Math.max(0, score)).toFixed(2));
 }
 
 
@@ -117,67 +120,100 @@ async function duplicateScores(questionTexts) {
 function ruleViolations(questionText) {
   const v = [];
   const text = questionText.toLowerCase();
+  const words = text.split(/\s+/);
 
-  if (questionText.slice(0, -1).includes("?"))
+  
+  const questionMarks = (questionText.match(/\?/g) || []).length;
+  if (questionMarks > 1)
     v.push("multiple_questions");
 
-  if (questionText.split(/\s+/).length > 40)
-    v.push("too_long");
+    if (questionText.split(/\s+/).length > 40)
+      v.push("too_long");
 
-  // double negatives
-  const neg = ["not", "never", "no", "none", "hardly", "rarely"];
-  let negCount = 0;
-  for (const n of neg) {
-    const m = text.match(new RegExp(`\\b${n}\\b`, "g"));
-    if (m) negCount += m.length;
+  const negWords = new Set(["not", "never", "no", "none", "hardly", "rarely", "neither", "nor"]);
+  for (let i = 0; i < words.length; i++) {
+    if (negWords.has(words[i])) {
+      for (let j = i + 1; j < Math.min(i + 4, words.length); j++) {
+        const clean = words[j].replace(/[^a-z]/g, "");
+        if (negWords.has(clean)) {
+          v.push("double_negative");
+          break;
+        }
+      }
+    }
+    if (v.includes("double_negative")) break;
   }
-  if (negCount >= 2)
-    v.push("double_negative");
 
   // vague words
-  const vague = [
-    "often", "usually", "sometimes", "many", "some", "a lot", "regularly"
-  ];
+  const vague = ["often", "usually", "sometimes", "many", "some", "a lot", "regularly"];
   if (vague.some(w => text.includes(w)))
     v.push("vague_language");
+
+  // leading/loaded language
+  const leadingPhrases = [
+    "would you agree",
+    "would you say",
+    "don't you think",
+    "surely",
+    "obviously",
+    "naturally",
+    "it's clear that",
+    "as everyone knows",
+    "most people",
+    "everyone agrees"
+  ];
+  if (leadingPhrases.some(phrase => text.includes(phrase)))
+    v.push("leading_language");
 
   return v;
 }
 
-async function llmQualityScore(questionText, topic, variableName, variableRole, geminiCallFn) {
+async function llmQualityScoreBatch(questions, topic, geminiCallFn) {
   if (!geminiCallFn) {
-    return { clarity: 4, neutrality: 4, answerability: 4, relevance: 4 };
+    return questions.map(() => ({ clarity: 4, neutrality: 4, answerability: 4, relevance: 4 }));
   }
 
+  const systemPrompt = `You are a survey quality evaluator. You will receive a list of survey questions and must score each one on four criteria from 1-5. Return ONLY a valid JSON array in the same order as the input, like:
+[{"clarity": 4, "neutrality": 3, "answerability": 5, "relevance": 4}, ...]`;
+
+  const questionsText = questions.map((q, i) => {
+    const text = typeof q === "string" ? q : q.text;
+    const variable = typeof q === "object" ? q.variable : null;
+    const role = typeof q === "object" ? q.variableRole : null;
+    return `${i + 1}. Question: "${text}"\n   Variable: "${variable || "unknown"}" (${role || "unknown"})`;
+  }).join("\n");
+
+  const userPrompt = `Survey topic: "${topic}"
+
+Questions to evaluate:
+${questionsText}
+
+Score each question on:
+- clarity (1-5): Is it easy to understand?
+- neutrality (1-5): Is it free from bias or leading language?
+- answerability (1-5): Can respondents reasonably answer this?
+- relevance (1-5): Does it appropriately measure its assigned variable? Note: demographic/control questions are always relevant.
+
+Return a JSON array with ${questions.length} objects, one per question, in the same order.`;
+
   try {
-    const systemPrompt = `You are a survey quality evaluator. Score the given question on four criteria from 1-5. Return ONLY valid JSON like: {"clarity": 4, "neutrality": 3, "answerability": 5, "relevance": 4}`;
+    const result = await geminiCallFn(userPrompt, systemPrompt, null);
 
-    const userPrompt = `Survey topic: "${topic}"
-      Question: "${questionText}"
-      Assigned variable: "${variableName || "unknown"}"
-      Variable role: "${variableRole || "unknown"}" (dependent = outcome being measured, driver = factor influencing outcome, control = demographic/background)
+    if (Array.isArray(result) && result.length === questions.length) {
+      return result.map(r => ({
+        clarity: typeof r.clarity === "number" && r.clarity >= 1 && r.clarity <= 5 ? r.clarity : 4,
+        neutrality: typeof r.neutrality === "number" && r.neutrality >= 1 && r.neutrality <= 5 ? r.neutrality : 4,
+        answerability: typeof r.answerability === "number" && r.answerability >= 1 && r.answerability <= 5 ? r.answerability : 4,
+        relevance: typeof r.relevance === "number" && r.relevance >= 1 && r.relevance <= 5 ? r.relevance : 4
+      }));
+    }
 
-      Score this question on:
-      - clarity (1-5): Is the question easy to understand?
-      - neutrality (1-5): Is it free from bias or leading language?
-      - answerability (1-5): Can respondents reasonably answer this?
-      - relevance (1-5): Does this question appropriately measure its assigned variable for this survey topic? Note: control/demographic questions like age, gender, location are always relevant even if not directly about the topic.`;
+    console.warn(`Expected ${questions.length} LLM scores, got ${Array.isArray(result) ? result.length : 0}. Using defaults.`);
+    return questions.map(() => ({ clarity: 4, neutrality: 4, answerability: 4, relevance: 4 }));
 
-    const result = await geminiCallFn(userPrompt, systemPrompt, {
-      clarity: 4,
-      neutrality: 4,
-      answerability: 4,
-      relevance: 4
-    });
-
-    return {
-      clarity: typeof result.clarity === "number" ? result.clarity : 4,
-      neutrality: typeof result.neutrality === "number" ? result.neutrality : 4,
-      answerability: typeof result.answerability === "number" ? result.answerability : 4,
-      relevance: typeof result.relevance === "number" ? result.relevance : 4
-    };
   } catch (err) {
-    return { clarity: 4, neutrality: 4, answerability: 4, relevance: 4 };
+    console.error("Batch LLM scoring failed:", err);
+    return questions.map(() => ({ clarity: 4, neutrality: 4, answerability: 4, relevance: 4 }));
   }
 }
 
@@ -185,17 +221,12 @@ export async function evaluateQuestions(topic, questions, geminiCallFn = null) {
   const questionTexts = questions.map((q) => (typeof q === "string" ? q : q.text));
   const skipIssues = validateSkipLogic(questions);
   const scaleIssues = checkResponseScaleConsistency(questions);
-  // Collect all unique variable names across all questions
-  const allVariables = [
-    ...new Set(
-      questions
-        .map((q) => (typeof q === "object" ? q.variable : null))
-        .filter(Boolean)
-    )
-  ];
+  
 
   const results = [];
   const dup = await duplicateScores(questionTexts);
+
+  const batchScores = await llmQualityScoreBatch(questions, topic, geminiCallFn);
 
   for (let i = 0; i < questionTexts.length; i++) {
     const qText = questionTexts[i];
@@ -203,19 +234,16 @@ export async function evaluateQuestions(topic, questions, geminiCallFn = null) {
     const variableName = typeof qOriginal === "object" ? qOriginal.variable : null;
     const variableRole = typeof qOriginal === "object" ? qOriginal.variableRole : null;
 
-    const varRelevance = await variableRelevanceScore(qText, allVariables);
+    const varRelevance = await variableRelevanceScore(qText, variableName, variableRole);
     const read = readabilityScore(qText);
     const rules = ruleViolations(qText);
     let optionIssues = [];
 
-    if (
-      typeof qOriginal === "object" &&
-      Array.isArray(qOriginal.options)
-    ) {
+    if (typeof qOriginal === "object" && Array.isArray(qOriginal.options)) {
       optionIssues = validateResponseOptions(qOriginal.options);
     }
 
-    const llm = await llmQualityScore(qText, topic, variableName, variableRole, geminiCallFn);
+    const llm = batchScores[i]; // ← use pre-fetched score
 
     let maxDup = 0;
     for (let j = 0; j < questionTexts.length; j++) {
@@ -269,9 +297,59 @@ function validateSkipLogic(questions) {
 }
 
 function checkResponseScaleConsistency(questions) {
-  // Note: Cannot reliably check response scale consistency without semantic understanding.
-  // Scales can be numeric, text, or mixed. Deferred to LLM evaluation.
-  return [];
+  const issues = [];
+
+  // Collect all likert scales used
+  const likertScales = questions
+    .filter(q => q.type === "likert" && Array.isArray(q.options))
+    .map(q => q.options.length);
+
+  // Find the most common likert scale size
+  const dominantLikert = likertScales.length > 0
+    ? likertScales.sort((a, b) =>
+        likertScales.filter(v => v === b).length - likertScales.filter(v => v === a).length
+      )[0]
+    : null;
+
+  // Flag any likert question that deviates from dominant scale
+  if (dominantLikert) {
+    questions
+      .filter(q => q.type === "likert" && Array.isArray(q.options))
+      .forEach(q => {
+        if (q.options.length !== dominantLikert) {
+          issues.push({
+            question: q.text,
+            issue: `Inconsistent Likert scale: uses ${q.options.length}-point scale but survey mostly uses ${dominantLikert}-point`
+          });
+        }
+      });
+  }
+
+  // Collect all rating scales used
+  const ratingScales = questions
+    .filter(q => q.type === "rating" && Array.isArray(q.options))
+    .map(q => q.options.length);
+
+  const dominantRating = ratingScales.length > 0
+    ? ratingScales.sort((a, b) =>
+        ratingScales.filter(v => v === b).length - ratingScales.filter(v => v === a).length
+      )[0]
+    : null;
+
+  if (dominantRating) {
+    questions
+      .filter(q => q.type === "rating" && Array.isArray(q.options))
+      .forEach(q => {
+        if (q.options.length !== dominantRating) {
+          issues.push({
+            question: q.text,
+            issue: `Inconsistent rating scale: uses ${q.options.length}-point scale but survey mostly uses ${dominantRating}-point`
+          });
+        }
+      });
+  }
+
+  return issues;
 }
 
 export function validateResponseOptions(options = []) {
@@ -316,23 +394,20 @@ export function validateResponseOptions(options = []) {
 }
 
 export function needRegeneration(evals, thresholds = {}) {
-
-  const T = {
-    ...QUALITY_THRESHOLDS,
-    ...thresholds
-  };
+  const T = { ...QUALITY_THRESHOLDS, ...thresholds };
 
   for (const e of evals) {
-
     if (e.llm_scores.relevance < T.minLLM) return true;
     if (e.llm_scores.clarity < T.minLLM) return true;
+    if (e.llm_scores.neutrality < T.minLLM) return true;
     if (e.llm_scores.answerability < T.minLLM) return true;
 
-    if (e.variable_relevance < T.minVariableRelevance) return true;
+    // role-aware variable relevance threshold
+    const minRelevance = e.variableRole === "control" ? T.minVariableRelevanceControl : T.minVariableRelevance;
+    if (e.variable_relevance < minRelevance) return true;
+
     if (e.max_duplicate_similarity > T.maxDuplicate) return true;
-
     if (e.rule_violations.length > 0) return true;
-
     if (e.response_option_issues?.length > 0) return true;
     if (e.skip_logic_issue) return true;
     if (e.response_scale_issue) return true;
@@ -347,14 +422,17 @@ export function buildRegenerationFeedback(evals, topic) {
   for (const e of evals) {
     const p = [];
     if (e.llm_scores.relevance < 3) p.push(`low relevance to topic (${e.llm_scores.relevance}/5)`);
-    if (e.variable_relevance < 0.3) p.push(`question doesn't match its variable "${e.variable}"`);
+    if (e.llm_scores.clarity < 3) p.push(`low clarity (${e.llm_scores.clarity}/5)`);
+    if (e.llm_scores.neutrality < 3) p.push(`potential bias or leading language (${e.llm_scores.neutrality}/5)`);
+    if (e.llm_scores.answerability < 3) p.push(`low answerability (${e.llm_scores.answerability}/5)`);
+    if (e.variable_relevance < (e.variableRole === "control" ? 0.2 : 0.3)) p.push(`question doesn't match its variable "${e.variable}" (similarity: ${e.variable_relevance})`);
     if (e.max_duplicate_similarity > 0.9) p.push("too similar to another question");
     if (e.rule_violations.length) p.push(`rule violations: ${e.rule_violations.join(", ")}`);
-    if (e.llm_scores.clarity < 3) p.push("low clarity");
-    if (e.llm_scores.answerability < 3) p.push("low answerability");
-    if (e.skip_logic_issue) p.push("invalid skip logic");
-    if (e.response_scale_issue) p.push("inconsistent response scale");
-    if (p.length) bad.push({ q: e.question, p });
+    if (e.skip_logic_issue) p.push(e.skip_logic_issue.issue || "invalid skip logic");
+    if (e.response_scale_issue) p.push(e.response_scale_issue.issue || "inconsistent response scale");
+    if (e.llm_scores.answerability < 3 || e.llm_scores.clarity < 3)   // ← add here
+      p.push(`possible double-barreled question — split into separate questions, each measuring one thing only`);
+    if (p.length) bad.push({ q: e.question, p });   // ← before this line
   }
 
   let text = `Survey topic: ${topic}\n\n`;

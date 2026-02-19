@@ -234,6 +234,7 @@ export function SurveyProvider({ children }) {
   function completeQualityCheck() {
   setStepStatus((prev) => ({
     ...prev,
+    3: "completed",
     4: "completed",
     5: prev[5] === "locked" ? "unlocked" : prev[5]
   }));
@@ -251,27 +252,32 @@ export function SurveyProvider({ children }) {
   }
 
   function isStepUnlocked(step) {
-    return stepStatus[step] === "unlocked" || stepStatus[step] === "completed";
+  return stepStatus[step] === "unlocked" || stepStatus[step] === "completed";
   }
 
   function hasEvaluationIssues(thresholds = {}) {
-
   const T = {
     ...QUALITY_THRESHOLDS,
     ...thresholds
   };
 
-  return evaluations.some(e =>
-    e.llm_scores.relevance < T.minLLM ||
-    e.llm_scores.clarity < T.minLLM ||
-    e.llm_scores.answerability < T.minLLM ||
-    e.variable_relevance < T.minVariableRelevance ||
-    e.max_duplicate_similarity > T.maxDuplicate ||
-    e.rule_violations.length > 0 ||
-    (e.response_option_issues?.length ?? 0) > 0 ||
-    e.skip_logic_issue ||
-    e.response_scale_issue
-  );
+  return evaluations.some(e => {
+    const threshold = e.variableRole === "control"
+      ? T.minVariableRelevanceControl
+      : T.minVariableRelevance;
+
+    return (
+      e.llm_scores.relevance < T.minLLM ||
+      e.llm_scores.clarity < T.minLLM ||
+      e.llm_scores.answerability < T.minLLM ||
+      e.variable_relevance < threshold ||     
+      e.max_duplicate_similarity > T.maxDuplicate ||
+      e.rule_violations.length > 0 ||
+      (e.response_option_issues?.length ?? 0) > 0 ||
+      e.skip_logic_issue ||
+      e.response_scale_issue 
+    );
+  });
 }
 
   const value = {

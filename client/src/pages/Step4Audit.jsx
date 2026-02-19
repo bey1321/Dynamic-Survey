@@ -52,7 +52,7 @@ function Step4Audit() {
         e.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM ||
         e.llm_scores.clarity   < QUALITY_THRESHOLDS.minLLM ||
         e.llm_scores.neutrality < QUALITY_THRESHOLDS.minLLM ||
-        e.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance ||
+        e.variable_relevance < (e.variableRole === "control" ? QUALITY_THRESHOLDS.minVariableRelevanceControl : QUALITY_THRESHOLDS.minVariableRelevance) ||
         e.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate ||
         e.rule_violations.length > 0 ||
         (e.response_option_issues?.length ?? 0) > 0 ||
@@ -62,7 +62,7 @@ function Step4Audit() {
         .map((e) => {
           const problems = [];
           if (e.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM) problems.push(`low relevance (${e.llm_scores.relevance}/5)`);
-          if (e.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance) problems.push(`doesn't match variable "${e.variable}"`);
+          if (e.variable_relevance < (e.variableRole === "control" ? QUALITY_THRESHOLDS.minVariableRelevanceControl : QUALITY_THRESHOLDS.minVariableRelevance)) problems.push(`Doesn't match variable "${e.variable}"`);
           if (e.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate) problems.push("too similar to another question");
           if (e.rule_violations.length) problems.push(`rule violations: ${e.rule_violations.join(", ")}`);
           if (e.llm_scores.clarity < QUALITY_THRESHOLDS.minLLM) problems.push(`low clarity (${e.llm_scores.clarity}/5)`);
@@ -91,7 +91,6 @@ function Step4Audit() {
       if (Array.isArray(data.questions) && data.questions.length > 0) {
         setQuestionsFromAI(data.questions);
         if (data.evaluations) setEvaluations(data.evaluations);
-        navigate("/step/3-questions");
       }
     } catch (err) {
       console.error("Regeneration failed:", err);
@@ -105,7 +104,7 @@ function Step4Audit() {
     try {
       const problems = [];
       if (evaluation.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM) problems.push(`low relevance (${evaluation.llm_scores.relevance}/5)`);
-      if (evaluation.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance) problems.push(`doesn't match variable "${evaluation.variable}"`);
+      if (evaluation.variable_relevance < (evaluation.variableRole === "control" ? QUALITY_THRESHOLDS.minVariableRelevanceControl : QUALITY_THRESHOLDS.minVariableRelevance)) problems.push(`doesn't match variable "${evaluation.variable}"`);
       if (evaluation.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate) problems.push("too similar to another question");
       if (evaluation.rule_violations.length) problems.push(`rule violations: ${evaluation.rule_violations.join(", ")}`);
       if (evaluation.llm_scores.clarity < QUALITY_THRESHOLDS.minLLM) problems.push("low clarity");
@@ -131,7 +130,6 @@ function Step4Audit() {
       if (Array.isArray(data.questions) && data.questions.length > 0) {
         setQuestionsFromAI(data.questions);
         if (data.evaluations) setEvaluations(data.evaluations);
-        navigate("/step/3-questions");
       }
     } catch (err) {
       console.error("Single question regeneration failed:", err);
@@ -178,7 +176,7 @@ function Step4Audit() {
         {evaluations.map((e, i) => {
           const issues = [];
           if (e.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM) issues.push(`Low topic relevance (${e.llm_scores.relevance}/5)`);
-          if (e.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance) issues.push(`Doesn't match variable "${e.variable}"`);
+          if (e.variable_relevance < (e.variableRole === "control" ? QUALITY_THRESHOLDS.minVariableRelevanceControl : QUALITY_THRESHOLDS.minVariableRelevance)) issues.push(`Doesn't match variable "${e.variable}"`);
           if (e.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate) issues.push("Too similar to another question");
           if (e.rule_violations.includes("multiple_questions")) issues.push("Contains multiple questions");
           if (e.rule_violations.includes("too_long")) issues.push("Question too long (>40 words)");
