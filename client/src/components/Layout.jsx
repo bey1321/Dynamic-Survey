@@ -2,6 +2,7 @@ import React from "react";
 import SidebarStepper from "./SidebarStepper";
 import HeaderBar from "./HeaderBar";
 import ToastContainer from "./ToastContainer";
+import { StepNavProvider } from "../state/StepNavContext";
 
 function Layout({ children }) {
   return (
@@ -12,7 +13,11 @@ function Layout({ children }) {
           <SidebarStepper />
         </aside>
         <main className="flex-1">
-          <div className="card p-6">{children}</div>
+          <div className="card p-6">
+            <StepNavProvider base="/step">
+              {children}
+            </StepNavProvider>
+          </div>
         </main>
       </div>
       <ToastContainer />

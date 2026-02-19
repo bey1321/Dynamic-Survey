@@ -14,9 +14,9 @@ const TYPE_LABELS = {
 const QUESTION_TYPES = Object.keys(TYPE_LABELS);
 
 const ROLE_COLORS = {
-  dependent: "bg-blue-100 text-blue-800",
-  driver: "bg-amber-100 text-amber-800",
-  control: "bg-slate-100 text-slate-600"
+  dependent: { bg: "#dbeeff", text: "#1B6B8A" },
+  driver:    { bg: "#fff3d0", text: "#8a6000" },
+  control:   { bg: "#e8f6f7", text: "#2AABBA" }
 };
 
 const BRANCH_OPERATORS = [
@@ -153,42 +153,63 @@ function Step3Questions() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="mono-block inline-block mb-2">
-        {isApproved
-          ? `[Generated Questions v${questionsState.approvedVersion}]`
-          : "[Generated Questions – Draft]"}
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold" style={{ color: "#1B6B8A" }}>Generate Questions</h2>
+          <p className="text-sm mt-0.5" style={{ color: "#9ab8c0" }}>
+            {isApproved ? `Approved — v${questionsState.approvedVersion}` : "Draft — not yet approved"}
+          </p>
+        </div>
+        {questions && questions.length > 0 && (
+          <span className="text-[11px] font-semibold px-3 py-1 rounded-full" style={{ backgroundColor: "#d0eaea", color: "#1B6B8A" }}>
+            {questions.length} question{questions.length !== 1 ? "s" : ""}
+          </span>
+        )}
       </div>
 
-      {/* Action buttons */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Action toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={handleGenerate}
           disabled={loading}
-          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded bg-primary text-white disabled:opacity-50"
+          className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-full text-white transition-colors duration-200 disabled:opacity-50"
+          style={{ backgroundColor: "#1B6B8A" }}
+          onMouseEnter={e => { if (!loading) e.currentTarget.style.backgroundColor = "#2AABBA"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#1B6B8A"; }}
         >
           {loading ? "Generating…" : "Generate Questions"}
         </button>
         <button
           type="button"
           onClick={handleStub}
-          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded bg-slate-800 text-white"
+          className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200"
+          style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
         >
-          Run Quality Check
+          Quality Check
         </button>
         <button
           type="button"
           onClick={handleStub}
-          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded border border-slate-300 text-slate-700"
+          className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200"
+          style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
         >
-          Run Simulation
+          Simulation
         </button>
         <button
           type="button"
           onClick={() => setPreviewing(true)}
           disabled={!questions || questions.length === 0}
-          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded bg-violet-600 text-white disabled:opacity-50"
+          className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
+          style={{ borderColor: "#5BBF8E", color: "#2d8c5e" }}
+          onMouseEnter={e => { if (questions?.length) e.currentTarget.style.backgroundColor = "#f0faf5"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
         >
           Preview
         </button>
@@ -196,7 +217,10 @@ function Step3Questions() {
           type="button"
           onClick={handleAddQuestion}
           disabled={!questions}
-          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded border border-slate-300 text-slate-700 disabled:opacity-50"
+          className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
+          style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
+          onMouseEnter={e => { if (questions) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
         >
           + Add Question
         </button>
@@ -204,7 +228,10 @@ function Step3Questions() {
           type="button"
           onClick={handleApprove}
           disabled={!questions || questions.length === 0}
-          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded bg-emerald-600 text-white disabled:opacity-50"
+          className="ml-auto flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-full text-white transition-colors duration-200 disabled:opacity-40"
+          style={{ backgroundColor: "#5BBF8E" }}
+          onMouseEnter={e => { if (questions?.length) e.currentTarget.style.backgroundColor = "#3ea873"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#5BBF8E"; }}
         >
           Approve Draft
         </button>
@@ -212,11 +239,14 @@ function Step3Questions() {
 
       {/* Questions list */}
       {loading && (
-        <div className="text-sm text-slate-500 py-6">Generating questions via Gemini…</div>
+        <div className="flex items-center gap-2 py-8 justify-center" style={{ color: "#9ab8c0" }}>
+          <span className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full inline-block" />
+          <span className="text-sm">Generating questions…</span>
+        </div>
       )}
 
       {!loading && questions && questions.length > 0 && (
-        <div className="space-y-3 mt-2">
+        <div className="space-y-3">
           {questions.map((q, index) =>
             editingId === q.id ? (
               <QuestionEditor
@@ -243,18 +273,14 @@ function Step3Questions() {
       )}
 
       {!loading && (!questions || questions.length === 0) && (
-        <div className="text-sm text-slate-400 py-6">
-          No questions generated yet. Click &quot;Generate Questions&quot; to start.
+        <div className="rounded-xl border py-12 text-center" style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}>
+          <p className="text-sm" style={{ color: "#9ab8c0" }}>No questions yet. Click &quot;Generate Questions&quot; to start.</p>
         </div>
       )}
 
-      {/* Preview overlay */}
       {previewing && questions && questions.length > 0 && (
-        <SurveyPreview
-          questions={questions}
-          title={surveyDraft.title}
-          onClose={() => setPreviewing(false)}
-        />
+        <SurveyPreview questions={questions} title={surveyDraft.title} onClose={() => setPreviewing(false)} />
+      
       )}
     </div>
   );
@@ -265,43 +291,39 @@ function Step3Questions() {
 /* ------------------------------------------------------------------ */
 
 function QuestionCard({ question: q, onEdit, onDelete }) {
+  const roleStyle = ROLE_COLORS[q.variableRole] || { bg: "#e8f6f7", text: "#2AABBA" };
   return (
-    <div className="card p-4 group">
+    <div className="rounded-xl border p-4 group transition-shadow hover:shadow-md" style={{ borderColor: "#d0eaea", backgroundColor: "#ffffff" }}>
       <div className="flex items-start justify-between gap-3 mb-2">
-        <span className="text-sm font-semibold text-slate-900">
+        <span className="text-sm font-semibold" style={{ color: "#1B6B8A" }}>
           {q.id.toUpperCase()}. {q.text}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-violet-100 text-violet-700">
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: "#e8f6f7", color: "#1B6B8A" }}>
             {TYPE_LABELS[q.type] || q.type}
           </span>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ROLE_COLORS[q.variableRole] || "bg-slate-100 text-slate-600"}`}>
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: roleStyle.bg, color: roleStyle.text }}>
             {q.variableRole}
           </span>
         </div>
       </div>
 
-      <div className="text-xs text-slate-500 mb-1">
-        Variable: <span className="font-medium text-slate-700">{q.variable}</span>
+      <div className="text-xs mb-1" style={{ color: "#9ab8c0" }}>
+        Variable: <span className="font-medium" style={{ color: "#2d6a80" }}>{q.variable}</span>
       </div>
 
       {q.branchFrom && (
-        <div className="text-xs text-indigo-500 mb-1">
-          Branch from {q.branchFrom.toUpperCase()} — {q.branchCondition?.operator} &quot;{
-            Array.isArray(q.branchCondition?.value)
-              ? q.branchCondition.value.join(", ")
-              : q.branchCondition?.value
+        <div className="text-xs mb-1" style={{ color: "#2AABBA" }}>
+          ↳ Branch from {q.branchFrom.toUpperCase()} — {q.branchCondition?.operator} &quot;{
+            Array.isArray(q.branchCondition?.value) ? q.branchCondition.value.join(", ") : q.branchCondition?.value
           }&quot;
         </div>
       )}
 
       {q.options && q.options.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1">
+        <div className="flex flex-wrap gap-1 mt-1.5">
           {q.options.map((opt, i) => (
-            <span
-              key={i}
-              className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
-            >
+            <span key={i} className="text-[11px] px-2 py-0.5 rounded-full" style={{ backgroundColor: "#f0f8f8", color: "#2d6a80" }}>
               {opt}
             </span>
           ))}
@@ -309,23 +331,14 @@ function QuestionCard({ question: q, onEdit, onDelete }) {
       )}
 
       {q.required === false && (
-        <div className="text-[10px] text-slate-400 mt-1">Optional</div>
+        <div className="text-[10px] mt-1" style={{ color: "#9ab8c0" }}>Optional</div>
       )}
 
-      {/* Hover actions */}
-      <div className="flex gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-600 hover:bg-blue-100"
-        >
+      <div className="flex gap-2 mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button type="button" onClick={onEdit} className="text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors" style={{ backgroundColor: "#e8f6f7", color: "#1B6B8A" }}>
           Edit
         </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="text-[11px] px-2 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100"
-        >
+        <button type="button" onClick={onDelete} className="text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors" style={{ backgroundColor: "#fef2f2", color: "#dc2626" }}>
           Delete
         </button>
       </div>
@@ -373,137 +386,78 @@ function QuestionEditor({ question, index, totalCount, allQuestions, onSave, onC
     onSave(draft);
   }
 
+  const editorInputCls = "w-full rounded-lg border px-2.5 py-1.5 text-sm outline-none transition-all duration-200 border-[#b0d4dc] bg-white focus:border-[#2AABBA] focus:ring-2 focus:ring-[#2AABBA]/20";
+
   return (
-    <div className="card p-4 border-blue-300 ring-1 ring-blue-200">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-bold text-blue-700">{draft.id.toUpperCase()} — Editing</span>
+    <div className="rounded-xl border-2 p-4 space-y-3" style={{ borderColor: "#2AABBA", backgroundColor: "#f8fdfd" }}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold" style={{ color: "#1B6B8A" }}>{draft.id.toUpperCase()} — Editing</span>
         <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => onMove(-1)}
-            disabled={index === 0}
-            className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 disabled:opacity-30"
-            title="Move up"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            onClick={() => onMove(1)}
-            disabled={index === totalCount - 1}
-            className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 disabled:opacity-30"
-            title="Move down"
-          >
-            ↓
-          </button>
+          <button type="button" onClick={() => onMove(-1)} disabled={index === 0}
+            className="text-[11px] px-2 py-1 rounded-lg transition-colors disabled:opacity-30"
+            style={{ backgroundColor: "#e8f6f7", color: "#1B6B8A" }} title="Move up">↑</button>
+          <button type="button" onClick={() => onMove(1)} disabled={index === totalCount - 1}
+            className="text-[11px] px-2 py-1 rounded-lg transition-colors disabled:opacity-30"
+            style={{ backgroundColor: "#e8f6f7", color: "#1B6B8A" }} title="Move down">↓</button>
         </div>
       </div>
 
-      {/* Question text */}
-      <label className="block text-[11px] font-medium text-slate-500 mb-1">Question Text</label>
-      <input
-        type="text"
-        value={draft.text}
-        onChange={(e) => set("text", e.target.value)}
-        className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm mb-3 focus:outline-none focus:ring-1 focus:ring-blue-300"
-        placeholder="Enter question text…"
-      />
+      <div>
+        <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#1B6B8A" }}>Question Text</label>
+        <input type="text" value={draft.text} onChange={(e) => set("text", e.target.value)} className={editorInputCls} placeholder="Enter question text…" />
+      </div>
 
-      {/* Type selector */}
-      <div className="mb-3">
-        <label className="block text-[11px] font-medium text-slate-500 mb-1">Type</label>
-        <select
-          value={draft.type}
-          onChange={(e) => handleTypeChange(e.target.value)}
-          className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-        >
-          {QUESTION_TYPES.map((t) => (
-            <option key={t} value={t}>{TYPE_LABELS[t]}</option>
-          ))}
+      <div>
+        <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#1B6B8A" }}>Type</label>
+        <select value={draft.type} onChange={(e) => handleTypeChange(e.target.value)} className={editorInputCls}>
+          {QUESTION_TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
         </select>
       </div>
 
-      {/* Required toggle */}
-      <label className="flex items-center gap-2 text-xs text-slate-600 mb-3 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={draft.required}
-          onChange={(e) => set("required", e.target.checked)}
-          className="rounded border-slate-300"
-        />
+      <label className="flex items-center gap-2 text-xs cursor-pointer select-none" style={{ color: "#1B6B8A" }}>
+        <input type="checkbox" checked={draft.required} onChange={(e) => set("required", e.target.checked)} className="rounded" />
         Required
       </label>
 
-      {/* Options editor (hidden for open_ended) */}
       {draft.type !== "open_ended" && (
-        <div className="mb-3">
-          <label className="block text-[11px] font-medium text-slate-500 mb-1">
-            Options
-          </label>
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: "#1B6B8A" }}>Options</label>
           <div className="space-y-1.5">
             {draft.options.map((opt, i) => (
               <div key={i} className="flex items-center gap-1.5">
-                <input
-                  type="text"
-                  value={opt}
-                  onChange={(e) => handleOptionChange(i, e.target.value)}
-                  className="flex-1 border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-300"
-                  placeholder={`Option ${i + 1}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => handleRemoveOption(i)}
-                  className="text-[11px] px-1.5 py-0.5 rounded text-red-500 hover:bg-red-50"
-                  title="Remove option"
-                >
-                  ×
-                </button>
+                <input type="text" value={opt} onChange={(e) => handleOptionChange(i, e.target.value)}
+                  className={editorInputCls} placeholder={`Option ${i + 1}`} />
+                <button type="button" onClick={() => handleRemoveOption(i)}
+                  className="text-xs font-bold text-red-400 hover:text-red-600 px-1.5">✕</button>
               </div>
             ))}
           </div>
           {draft.type !== "yes_no" && draft.type !== "rating" && (
-            <button
-              type="button"
-              onClick={handleAddOption}
-              className="text-[11px] text-blue-600 hover:underline mt-1.5"
-            >
+            <button type="button" onClick={handleAddOption} className="text-[11px] font-semibold mt-1.5" style={{ color: "#2AABBA" }}>
               + Add option
             </button>
           )}
         </div>
       )}
 
-      {/* Branching logic editor */}
       <BranchEditor
         draft={draft}
         allQuestions={allQuestions}
         currentId={draft.id}
-        onChange={(branchFrom, branchCondition) =>
-          setDraft((prev) => ({ ...prev, branchFrom, branchCondition }))
-        }
+        onChange={(branchFrom, branchCondition) => setDraft((prev) => ({ ...prev, branchFrom, branchCondition }))}
       />
 
-      {/* Save / Cancel / Delete */}
-      <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-        <button
-          type="button"
-          onClick={handleSave}
-          className="px-3 py-1.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700"
-        >
+      <div className="flex items-center gap-2 pt-2 border-t" style={{ borderColor: "#d0eaea" }}>
+        <button type="button" onClick={handleSave}
+          className="text-xs font-bold px-4 py-1.5 rounded-full text-white" style={{ backgroundColor: "#1B6B8A" }}>
           Save
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 text-xs font-medium rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
-        >
+        <button type="button" onClick={onCancel}
+          className="text-xs font-semibold px-4 py-1.5 rounded-full border" style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}>
           Cancel
         </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="px-3 py-1.5 text-xs font-medium rounded text-red-600 hover:bg-red-50 ml-auto"
-        >
+        <button type="button" onClick={onDelete}
+          className="text-xs font-semibold px-4 py-1.5 rounded-full ml-auto" style={{ color: "#dc2626" }}>
           Delete Question
         </button>
       </div>
@@ -558,113 +512,67 @@ function BranchEditor({ draft, allQuestions, currentId, onChange }) {
   const operator = draft.branchCondition?.operator || "equals";
   const isNumericOp = operator === "gte" || operator === "lte";
 
+  const branchInputCls = "w-full rounded-lg border px-2.5 py-1.5 text-xs outline-none transition-all border-[#b0d4dc] bg-white focus:border-[#2AABBA] focus:ring-2 focus:ring-[#2AABBA]/20";
+  const branchLabelCls = "block text-[10px] font-bold uppercase tracking-wider mb-1";
+
   return (
-    <div className="mb-3 p-3 rounded border border-indigo-200 bg-indigo-50/50">
-      <label className="flex items-center gap-2 text-xs font-medium text-indigo-700 mb-2 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={hasBranch}
-          onChange={(e) => handleToggle(e.target.checked)}
-          className="rounded border-indigo-300"
-        />
+    <div className="p-3 rounded-xl border" style={{ borderColor: "#b0d4dc", backgroundColor: "#f0f8f8" }}>
+      <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer select-none mb-2" style={{ color: "#1B6B8A" }}>
+        <input type="checkbox" checked={hasBranch} onChange={(e) => handleToggle(e.target.checked)} className="rounded" />
         Conditional (branching logic)
       </label>
 
       {hasBranch && (
         <div className="space-y-2 pl-1">
-          {/* Parent question selector */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-500 mb-1">Show this question when...</label>
-            <select
-              value={draft.branchFrom || ""}
-              onChange={(e) => handleParentChange(e.target.value)}
-              className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
-            >
+            <label className={branchLabelCls} style={{ color: "#1B6B8A" }}>Show when...</label>
+            <select value={draft.branchFrom || ""} onChange={(e) => handleParentChange(e.target.value)} className={branchInputCls}>
               {candidates.map((q) => (
                 <option key={q.id} value={q.id}>
-                  {q.id.toUpperCase()} — {q.text ? q.text.slice(0, 50) : "(no text)"}
-                  {q.text && q.text.length > 50 ? "…" : ""}
+                  {q.id.toUpperCase()} — {q.text ? q.text.slice(0, 50) : "(no text)"}{q.text?.length > 50 ? "…" : ""}
                 </option>
               ))}
             </select>
           </div>
-
-          {/* Operator selector */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-500 mb-1">Condition</label>
-            <select
-              value={operator}
-              onChange={(e) => handleOperatorChange(e.target.value)}
-              className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
-            >
-              {BRANCH_OPERATORS.map((op) => (
-                <option key={op.value} value={op.value}>{op.label}</option>
-              ))}
+            <label className={branchLabelCls} style={{ color: "#1B6B8A" }}>Condition</label>
+            <select value={operator} onChange={(e) => handleOperatorChange(e.target.value)} className={branchInputCls}>
+              {BRANCH_OPERATORS.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
             </select>
           </div>
-
-          {/* Value input */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-500 mb-1">Value</label>
+            <label className={branchLabelCls} style={{ color: "#1B6B8A" }}>Value</label>
             {isNumericOp ? (
-              <input
-                type="text"
+              <input type="text"
                 value={typeof conditionValue === "string" ? conditionValue : (Array.isArray(conditionValue) ? conditionValue[0] || "" : "")}
-                onChange={(e) => handleValueChange(e.target.value)}
-                className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                placeholder="Numeric value (e.g. 2)"
-              />
+                onChange={(e) => handleValueChange(e.target.value)} className={branchInputCls} placeholder="Numeric value" />
             ) : parentOptions.length > 0 ? (
               <div className="space-y-1">
                 {parentOptions.map((opt) => {
-                  const selected = Array.isArray(conditionValue)
-                    ? conditionValue.includes(opt)
-                    : conditionValue === opt;
+                  const selected = Array.isArray(conditionValue) ? conditionValue.includes(opt) : conditionValue === opt;
                   const isMulti = operator === "includes" || operator === "equals" || operator === "not_equals";
-
                   function toggle() {
                     if (isMulti && (operator === "includes" || (Array.isArray(conditionValue) && conditionValue.length > 0))) {
-                      // Multi-value: toggle in array
                       const arr = Array.isArray(conditionValue) ? conditionValue : (conditionValue ? [conditionValue] : []);
-                      const next = selected
-                        ? arr.filter((v) => v !== opt)
-                        : [...arr, opt];
+                      const next = selected ? arr.filter((v) => v !== opt) : [...arr, opt];
                       handleValueChange(next.length === 1 ? next[0] : next);
-                    } else {
-                      // Single value
-                      handleValueChange(opt);
-                    }
+                    } else { handleValueChange(opt); }
                   }
-
                   return (
-                    <label
-                      key={opt}
-                      className={`flex items-center gap-2 px-2 py-1 text-xs rounded border cursor-pointer transition-colors ${
-                        selected
-                          ? "bg-indigo-100 border-indigo-400 text-indigo-800"
-                          : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                      }`}
+                    <label key={opt}
+                      className="flex items-center gap-2 px-2 py-1 text-xs rounded-lg border cursor-pointer transition-colors"
+                      style={selected ? { backgroundColor: "#d0eaea", borderColor: "#2AABBA", color: "#1B6B8A" } : { borderColor: "#d0eaea", color: "#2d6a80" }}
                     >
-                      <input
-                        type={operator === "includes" ? "checkbox" : "radio"}
-                        name={`branch-val-${currentId}`}
-                        checked={selected}
-                        onChange={toggle}
-                        className="rounded border-slate-300"
-                      />
+                      <input type={operator === "includes" ? "checkbox" : "radio"} name={`branch-val-${currentId}`} checked={selected} onChange={toggle} className="rounded" />
                       {opt}
                     </label>
                   );
                 })}
               </div>
             ) : (
-              <input
-                type="text"
+              <input type="text"
                 value={typeof conditionValue === "string" ? conditionValue : (Array.isArray(conditionValue) ? conditionValue.join(", ") : "")}
-                onChange={(e) => handleValueChange(e.target.value)}
-                className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                placeholder="Answer value"
-              />
+                onChange={(e) => handleValueChange(e.target.value)} className={branchInputCls} placeholder="Answer value" />
             )}
           </div>
         </div>
@@ -744,45 +652,32 @@ function SurveyPreview({ questions, title, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto py-8">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden">
+        <div className="h-1 w-full" style={{ background: "linear-gradient(to right, #5BBF8E, #2AABBA, #1B6B8A)" }} />
+        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: "#d0eaea" }}>
           <div>
-            <h2 className="text-base font-semibold text-slate-900">
-              {title || "Survey Preview"}
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {visible.length} of {questions.length} questions visible
-            </p>
+            <h2 className="text-base font-bold" style={{ color: "#1B6B8A" }}>{title || "Survey Preview"}</h2>
+            <p className="text-xs mt-0.5" style={{ color: "#9ab8c0" }}>{visible.length} of {questions.length} questions visible</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setAnswers({})}
-              className="text-xs px-3 py-1.5 rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
-            >
-              Reset Answers
+            <button type="button" onClick={() => setAnswers({})}
+              className="text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors"
+              style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}>
+              Reset
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-xs px-3 py-1.5 rounded bg-slate-800 text-white hover:bg-slate-700"
-            >
-              Close Preview
+            <button type="button" onClick={onClose}
+              className="text-xs font-bold px-3 py-1.5 rounded-full text-white"
+              style={{ backgroundColor: "#1B6B8A" }}>
+              Close
             </button>
           </div>
         </div>
-
-        {/* Questions */}
-        <div className="px-6 py-5 space-y-4">
+        <div className="px-6 py-5 space-y-4" style={{ backgroundColor: "#f0f8f8" }}>
           {visible.map((q) => (
-            <PreviewCard
-              key={q.id}
-              question={q}
-              answer={answers[q.id]}
-              onAnswer={(val) => setAnswer(q.id, val)}
-              onToggleMulti={(opt) => toggleMulti(q.id, opt)}
-            />
+            <PreviewCard key={q.id} question={q} answer={answers[q.id]}
+              onAnswer={(val) => setAnswer(q.id, val)} onToggleMulti={(opt) => toggleMulti(q.id, opt)} />
           ))}
         </div>
       </div>
@@ -797,138 +692,90 @@ function SurveyPreview({ questions, title, onClose }) {
 function PreviewCard({ question: q, answer, onAnswer, onToggleMulti }) {
   const multiSelected = Array.isArray(answer) ? answer : [];
 
+  const selectedStyle = { backgroundColor: "#d0eaea", borderColor: "#2AABBA", color: "#1B6B8A" };
+  const defaultStyle  = { borderColor: "#d0eaea", color: "#2d6a80" };
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border bg-white p-5 shadow-sm" style={{ borderColor: "#d0eaea" }}>
       <div className="flex items-start gap-2 mb-3">
-        <span className="text-xs font-bold text-slate-400 mt-0.5 shrink-0">
+        <span className="text-xs font-bold mt-0.5 shrink-0 px-1.5 py-0.5 rounded" style={{ backgroundColor: "#e8f6f7", color: "#1B6B8A" }}>
           {q.id.toUpperCase()}
         </span>
-        <span className="text-sm font-medium text-slate-900">
-          {q.text}
-          {q.required && <span className="text-red-500 ml-0.5">*</span>}
+        <span className="text-sm font-medium" style={{ color: "#1B6B8A" }}>
+          {q.text}{q.required && <span className="text-red-400 ml-0.5">*</span>}
         </span>
       </div>
 
-      {/* Likert */}
       {q.type === "likert" && (
         <div className="flex flex-wrap gap-2">
           {q.options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => onAnswer(opt)}
-              className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
-                answer === opt
-                  ? "bg-primary text-white border-primary"
-                  : "border-slate-200 text-slate-700 hover:border-slate-400"
-              }`}
-            >
+            <button key={opt} type="button" onClick={() => onAnswer(opt)}
+              className="px-3 py-1.5 text-xs rounded-full border transition-colors"
+              style={answer === opt ? selectedStyle : defaultStyle}>
               {opt}
             </button>
           ))}
         </div>
       )}
 
-      {/* Multiple choice */}
       {q.type === "multiple_choice" && (
         <div className="space-y-1.5">
           {q.options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => onAnswer(opt)}
-              className={`w-full text-left px-3 py-2 text-xs rounded border transition-colors ${
-                answer === opt
-                  ? "bg-blue-50 border-blue-400 text-blue-800"
-                  : "border-slate-200 text-slate-700 hover:bg-slate-50"
-              }`}
-            >
+            <button key={opt} type="button" onClick={() => onAnswer(opt)}
+              className="w-full text-left px-3 py-2 text-xs rounded-lg border transition-colors"
+              style={answer === opt ? selectedStyle : defaultStyle}>
               {opt}
             </button>
           ))}
         </div>
       )}
 
-      {/* Multi select */}
       {q.type === "multi_select" && (
         <div className="space-y-1.5">
-          <p className="text-[10px] text-slate-400 mb-1">Select all that apply</p>
+          <p className="text-[10px] mb-1" style={{ color: "#9ab8c0" }}>Select all that apply</p>
           {q.options.map((opt) => (
-            <label
-              key={opt}
-              className={`flex items-center gap-2 w-full px-3 py-2 text-xs rounded border cursor-pointer transition-colors ${
-                multiSelected.includes(opt)
-                  ? "bg-blue-50 border-blue-400 text-blue-800"
-                  : "border-slate-200 text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={multiSelected.includes(opt)}
-                onChange={() => onToggleMulti(opt)}
-                className="rounded border-slate-300"
-              />
+            <label key={opt} className="flex items-center gap-2 w-full px-3 py-2 text-xs rounded-lg border cursor-pointer transition-colors"
+              style={multiSelected.includes(opt) ? selectedStyle : defaultStyle}>
+              <input type="checkbox" checked={multiSelected.includes(opt)} onChange={() => onToggleMulti(opt)} className="rounded" />
               {opt}
             </label>
           ))}
         </div>
       )}
 
-      {/* Yes / No */}
       {q.type === "yes_no" && (
         <div className="flex gap-3">
           {q.options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => onAnswer(opt)}
-              className={`flex-1 px-4 py-2 text-sm font-medium rounded border transition-colors ${
-                answer === opt
-                  ? "bg-primary text-white border-primary"
-                  : "border-slate-200 text-slate-700 hover:border-slate-400"
-              }`}
-            >
+            <button key={opt} type="button" onClick={() => onAnswer(opt)}
+              className="flex-1 px-4 py-2 text-sm font-semibold rounded-full border transition-colors"
+              style={answer === opt ? { ...selectedStyle, backgroundColor: "#1B6B8A", color: "white" } : defaultStyle}>
               {opt}
             </button>
           ))}
         </div>
       )}
 
-      {/* Rating 1-10 */}
       {q.type === "rating" && (
         <div className="flex flex-wrap gap-1.5">
           {q.options.map((opt) => (
-            <button
-              key={opt}
-              type="button"
-              onClick={() => onAnswer(opt)}
-              className={`w-9 h-9 text-xs font-medium rounded-full border transition-colors ${
-                answer === opt
-                  ? "bg-primary text-white border-primary"
-                  : "border-slate-200 text-slate-700 hover:border-slate-400"
-              }`}
-            >
+            <button key={opt} type="button" onClick={() => onAnswer(opt)}
+              className="w-9 h-9 text-xs font-bold rounded-full border transition-colors"
+              style={answer === opt ? { backgroundColor: "#1B6B8A", borderColor: "#1B6B8A", color: "white" } : defaultStyle}>
               {opt}
             </button>
           ))}
         </div>
       )}
 
-      {/* Open ended */}
       {q.type === "open_ended" && (
-        <textarea
-          value={answer || ""}
-          onChange={(e) => onAnswer(e.target.value)}
-          rows={3}
-          className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-300 resize-none"
-          placeholder="Type your answer here…"
-        />
+        <textarea value={answer || ""} onChange={(e) => onAnswer(e.target.value)} rows={3}
+          className="w-full rounded-lg border px-3 py-2 text-sm outline-none resize-none transition-all border-[#b0d4dc] focus:border-[#2AABBA] focus:ring-2 focus:ring-[#2AABBA]/20"
+          placeholder="Type your answer here…" />
       )}
 
-      {/* Branch indicator */}
       {q.branchFrom && (
-        <div className="text-[10px] text-indigo-400 mt-2">
-          Shown based on {q.branchFrom.toUpperCase()} answer
+        <div className="text-[10px] mt-2" style={{ color: "#2AABBA" }}>
+          ↳ Shown based on {q.branchFrom.toUpperCase()} answer
         </div>
       )}
     </div>

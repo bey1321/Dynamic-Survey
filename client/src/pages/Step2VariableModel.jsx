@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSurvey } from "../state/SurveyContext";
+import { useStepBase } from "../state/StepNavContext";
 
 function Step2VariableModel() {
   const navigate = useNavigate();
+  const stepBase = useStepBase();
   const { surveyDraft, variableModel, setVariableModelFromAI, approveVariableModel, isStepUnlocked } = useSurvey();
   const [localModel, setLocalModel] = useState({
     dependent: [],
@@ -105,182 +107,154 @@ function Step2VariableModel() {
       ? `Variable Model Approved (v${variableModel.approvedVersion})`
       : variableModel.status;
 
-  return (
-    <div className="space-y-5">
-      <div className="mono-block inline-block mb-2">[Variable Model]</div>
+  const inputCls = "w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-800 outline-none transition-all duration-200 border-[#b0d4dc] bg-white focus:border-[#2AABBA] focus:ring-2 focus:ring-[#2AABBA]/20";
 
+  const sections = [
+    { key: "dependent", label: "Primary Outcome", sub: "Dependent Variable", dot: "#1B6B8A" },
+    { key: "drivers",   label: "Drivers",         sub: "Independent Variables", dot: "#2AABBA" },
+    { key: "controls",  label: "Controls",        sub: "Demographics", dot: "#5BBF8E" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold" style={{ color: "#1B6B8A" }}>Variable Model</h2>
+          <p className="text-sm mt-0.5" style={{ color: "#9ab8c0" }}>AI-generated structure for your survey</p>
+        </div>
+        <span
+          className="text-[11px] font-semibold px-3 py-1 rounded-full"
+          style={{ backgroundColor: "#d0eaea", color: "#1B6B8A" }}
+        >
+          {versionLabel}
+        </span>
+      </div>
+
+      {/* Lock warning */}
       {locked && (
-        <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-          Step 2 is locked until a survey draft is saved in Step 1.
+        <div className="rounded-xl border px-4 py-3 text-sm font-medium" style={{ borderColor: "#f5c842", backgroundColor: "#fffbea", color: "#92700a" }}>
+          ⚠ Step 2 is locked — save a survey draft in Step 1 first.
         </div>
       )}
 
+      {/* Generate button */}
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={handleGenerate}
           disabled={locked || loading}
-          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded bg-primary text-white disabled:bg-slate-300 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-full text-white transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ backgroundColor: "#1B6B8A" }}
+          onMouseEnter={e => { if (!locked && !loading) e.currentTarget.style.backgroundColor = "#2AABBA"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#1B6B8A"; }}
         >
-          {loading ? "Generating Variable Model (AI)..." : "Generate Variable Model (AI)"}
+          {loading ? (
+            <><span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" /> Generating…</>
+          ) : "Generate Variable Model (AI)"}
         </button>
-        <span className="text-xs text-slate-600">{versionLabel}</span>
       </div>
 
-      {error && <div className="text-sm text-red-600">{error}</div>}
+      {error && (
+        <p className="text-sm font-medium text-red-500">⚠ {error}</p>
+      )}
 
+      {/* Variable sections */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <section className="space-y-2">
-          <div className="text-sm font-semibold text-slate-800">
-            Primary Outcome (Dependent Variable)
+        {sections.map(({ key, label, sub, dot }) => (
+          <div
+            key={key}
+            className="rounded-xl border p-4 space-y-3"
+            style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: dot }} />
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: "#1B6B8A" }}>{label}</p>
+                <p className="text-[10px]" style={{ color: "#9ab8c0" }}>{sub}</p>
+              </div>
+            </div>
+            <ul className="space-y-2">
+              {localModel[key].map((item, idx) => (
+                <li key={idx} className="flex items-center gap-2">
+                  {isEditing ? (
+                    <>
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => updateItem(key, idx, e.target.value)}
+                        className={inputCls}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeItem(key, idx)}
+                        className="text-xs text-red-400 hover:text-red-600 shrink-0"
+                      >✕</button>
+                    </>
+                  ) : (
+                    <span className="text-sm flex items-center gap-1.5" style={{ color: "#2d6a80" }}>
+                      <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{ backgroundColor: dot }} />
+                      {item}
+                    </span>
+                  )}
+                </li>
+              ))}
+              {localModel[key].length === 0 && !isEditing && (
+                <li className="text-xs italic" style={{ color: "#9ab8c0" }}>No items yet</li>
+              )}
+              {isEditing && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => addItem(key)}
+                    className="text-xs font-semibold"
+                    style={{ color: "#2AABBA" }}
+                  >+ Add item</button>
+                </li>
+              )}
+            </ul>
           </div>
-          <ul className="space-y-2 text-sm text-slate-800">
-            {localModel.dependent.map((item, idx) => (
-              <li key={idx} className="flex items-center gap-2">
-                <span className="text-slate-500">-</span>
-                {isEditing ? (
-                  <>
-                    <input
-                      type="text"
-                      value={item}
-                      onChange={(e) => updateItem("dependent", idx, e.target.value)}
-                      className="mono-block flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeItem("dependent", idx)}
-                      className="text-xs text-red-600"
-                    >
-                      Delete
-                    </button>
-                  </>
-                ) : (
-                  <span>{item}</span>
-                )}
-              </li>
-            ))}
-            {isEditing && (
-              <li>
-                <button
-                  type="button"
-                  onClick={() => addItem("dependent")}
-                  className="text-xs text-primary"
-                >
-                  + Add dependent variable
-                </button>
-              </li>
-            )}
-          </ul>
-        </section>
-
-        <section className="space-y-2">
-          <div className="text-sm font-semibold text-slate-800">
-            Drivers (Independent Variables)
-          </div>
-          <ul className="space-y-2 text-sm text-slate-800">
-            {localModel.drivers.map((item, idx) => (
-              <li key={idx} className="flex items-center gap-2">
-                <span className="text-slate-500">-</span>
-                {isEditing ? (
-                  <>
-                    <input
-                      type="text"
-                      value={item}
-                      onChange={(e) => updateItem("drivers", idx, e.target.value)}
-                      className="mono-block flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeItem("drivers", idx)}
-                      className="text-xs text-red-600"
-                    >
-                      Delete
-                    </button>
-                  </>
-                ) : (
-                  <span>{item}</span>
-                )}
-              </li>
-            ))}
-            {isEditing && (
-              <li>
-                <button
-                  type="button"
-                  onClick={() => addItem("drivers")}
-                  className="text-xs text-primary"
-                >
-                  + Add driver
-                </button>
-              </li>
-            )}
-          </ul>
-        </section>
-
-        <section className="space-y-2">
-          <div className="text-sm font-semibold text-slate-800">Controls (Demographics)</div>
-          <ul className="space-y-2 text-sm text-slate-800">
-            {localModel.controls.map((item, idx) => (
-              <li key={idx} className="flex items-center gap-2">
-                <span className="text-slate-500">-</span>
-                {isEditing ? (
-                  <>
-                    <input
-                      type="text"
-                      value={item}
-                      onChange={(e) => updateItem("controls", idx, e.target.value)}
-                      className="mono-block flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeItem("controls", idx)}
-                      className="text-xs text-red-600"
-                    >
-                      Delete
-                    </button>
-                  </>
-                ) : (
-                  <span>{item}</span>
-                )}
-              </li>
-            ))}
-            {isEditing && (
-              <li>
-                <button
-                  type="button"
-                  onClick={() => addItem("controls")}
-                  className="text-xs text-primary"
-                >
-                  + Add control
-                </button>
-              </li>
-            )}
-          </ul>
-        </section>
+        ))}
       </div>
 
-      <div className="flex items-center gap-3">
+      {/* Actions */}
+      <div className="flex items-center justify-between pt-2">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleApprove}
+            disabled={locked}
+            className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-full text-white transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ backgroundColor: "#5BBF8E" }}
+            onMouseEnter={e => { if (!locked) e.currentTarget.style.backgroundColor = "#3ea873"; }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#5BBF8E"; }}
+          >
+            Approve Model
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsEditing((prev) => !prev)}
+            disabled={locked}
+            className="text-sm font-semibold px-4 py-2.5 rounded-full border transition-colors duration-200 disabled:opacity-40"
+            style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
+            onMouseEnter={e => { if (!locked) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+          >
+            {isEditing ? "Done Editing" : "Edit"}
+          </button>
+        </div>
         <button
           type="button"
-          onClick={handleApprove}
-          disabled={locked}
-          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded bg-emerald-600 text-white disabled:bg-slate-300 disabled:cursor-not-allowed"
-        >
-          Approve
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsEditing((prev) => !prev)}
-          disabled={locked}
-          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded border border-slate-300 text-slate-700 disabled:bg-slate-100 disabled:text-slate-400"
-        >
-          {isEditing ? "Done" : "Edit"}
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate("/step/3-questions")}
-          className="inline-flex items-center px-4 py-2 text-sm font-medium rounded bg-primary text-white"
+          onClick={() => navigate(`${stepBase}/3-questions`)}
+          className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-full text-white shadow-md transition-colors duration-200"
+          style={{ backgroundColor: "#1B6B8A" }}
+          onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#2AABBA"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#1B6B8A"; }}
         >
           Next: Generate Questions
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
         </button>
       </div>
     </div>
