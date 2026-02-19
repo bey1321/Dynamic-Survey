@@ -127,48 +127,77 @@ async function callGeminiForQuestions(surveyDraft, variableModel) {
   return { questions: validated };
 }
 
+// ---------------------------------------------------------------------------
+// MAX_REGEN_ATTEMPTS: how many times we'll try to improve questions before
+// giving up and returning the best result so far.
+// Attempt 1 = initial generation
+// Attempts 2..MAX = regeneration rounds
+// ---------------------------------------------------------------------------
+const MAX_REGEN_ATTEMPTS = 4;
+
 app.post("/api/generate-questions", async (req, res) => {
   const { surveyDraft, variableModel } = req.body || {};
 
   try {
-    let result = await callGeminiForQuestions(surveyDraft, variableModel);
+    const topic = surveyDraft?.goal || surveyDraft?.title || "general survey";
 
-    if (!Array.isArray(result.questions) || result.questions.length === 0) {
-      return res.json(result);
+    let currentResult = await callGeminiForQuestions(surveyDraft, variableModel);
+
+    if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) {
+      return res.json(currentResult);
     }
 
-    // ← wrap evaluation in its own try/catch so it never breaks generation
-    try {
-      const topic = surveyDraft?.goal || surveyDraft?.title || "general survey";
-      const evaluations = await evaluateQuestions(topic, result.questions, callGemini);
+    let currentEvals = null;
+    let attemptsMade = 0;
+    let regenerated = false;
 
-      if (needRegeneration(evaluations)) {
-        const feedback = buildRegenerationFeedback(evaluations, topic);
-        const improvedResult = await callGeminiForQuestions(
+    try {
+      // Evaluate → regenerate loop
+      for (let attempt = 1; attempt <= MAX_REGEN_ATTEMPTS; attempt++) {
+        attemptsMade = attempt;
+
+        const evals = await evaluateQuestions(topic, currentResult.questions, callGemini);
+        currentEvals = evals;
+
+        console.log(`[Attempt ${attempt}] needRegeneration: ${needRegeneration(evals)}`);
+
+        // Questions are clean — stop here
+        if (!needRegeneration(evals)) {
+          break;
+        }
+
+        // Reached the limit — return best result so far
+        if (attempt === MAX_REGEN_ATTEMPTS) {
+          console.warn(`[Attempt ${attempt}] Max regeneration attempts reached. Returning best result.`);
+          break;
+        }
+
+        // Build feedback and regenerate
+        const feedback = buildRegenerationFeedback(evals, topic);
+        console.log(`[Attempt ${attempt}] Regenerating with feedback…`);
+        currentResult = await callGeminiForQuestions(
           { ...surveyDraft, feedback },
           variableModel
         );
-        const improvedEvals = await evaluateQuestions(
-          topic,
-          improvedResult.questions || result.questions,
-          callGemini
-        );
-        return res.json({
-          ...improvedResult,
-          evaluations: improvedEvals,
-          regenerated: true
-        });
+        regenerated = true;
+
+        if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) {
+          console.warn(`[Attempt ${attempt}] Regeneration returned empty questions. Stopping.`);
+          break;
+        }
       }
 
       return res.json({
-        ...result,
-        evaluations,
-        regenerated: false
+        ...currentResult,
+        evaluations: currentEvals,
+        regenerated,
+        attemptsMade
       });
 
     } catch (evalErr) {
-      console.error("Evaluation failed, returning questions without eval:", evalErr);
-      return res.json(result); // ← still returns questions even if eval fails
+      // Evaluation pipeline failed — still return questions without eval
+      console.error("Evaluation/regeneration loop failed, returning questions without eval:", evalErr);
+      return res.json(currentResult);
     }
 
   } catch (err) {
@@ -229,5 +258,3 @@ const port = process.env.PORT || 4000;
 app.listen(port, () => {
   console.log(`Server listening on http://localhost:${port}`);
 });
-
-

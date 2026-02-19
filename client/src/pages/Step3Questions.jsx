@@ -45,14 +45,14 @@ function Step3Questions() {
     setQuestionsFromAI,
     updateQuestions,
     approveQuestions,
-    completeQualityCheck,
+    evaluations,
     setEvaluations
   } = useSurvey();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [previewing, setPreviewing] = useState(false);
-  const [evaluating, setEvaluating] = useState(false);
+  const [showQualityReport, setShowQualityReport] = useState(false);
   const navigate = useNavigate();
 
   const questions = questionsState.questions;
@@ -79,6 +79,7 @@ function Step3Questions() {
 
       if (Array.isArray(data.questions) && data.questions.length > 0) {
         setQuestionsFromAI(data.questions);
+        if (data.evaluations) setEvaluations(data.evaluations);
         showToast("Questions generated successfully.");
       } else {
         showToast("No questions returned. Using fallback.");
@@ -101,39 +102,6 @@ function Step3Questions() {
     showToast("Questions approved — Step 4 unlocked.");
   }
 
-  async function handleQualityCheck() {
-  if (!questions || questions.length === 0) {
-    showToast("Generate questions first before running quality check.");
-    return;
-  }
-
-  setEvaluating(true);
-  try {
-    const res = await fetch("http://localhost:4000/api/evaluate-questions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        questions,
-        topic: surveyDraft?.goal || surveyDraft?.title || "general survey"
-      })
-    });
-    const data = await res.json();
-
-    if (data.evaluations) {
-    setEvaluations(data.evaluations);
-    completeQualityCheck();
-    showToast("Quality check complete — see Step 4.");
-    navigate("/step/4-audit"); 
-    } else {
-      showToast("Quality check failed — no results returned.");
-    }
-  } catch (err) {
-    console.error("Quality check failed:", err);
-    showToast("Quality check failed — check server logs.");
-  } finally {
-    setEvaluating(false);
-  }
-}
 
 function handleStub() {
   showToast("Not implemented in this prototype – handled by another team.");
@@ -208,6 +176,17 @@ function commitEdit(index, updatedQuestion) {
 
       {/* Action toolbar */}
       <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setShowQualityReport(true)}
+        disabled={!evaluations || evaluations.length === 0}
+        className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
+        style={{ borderColor: "#536b6e", color: "#1B6B8A" }}
+        onMouseEnter={e => { if (evaluations?.length) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+        onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+      >
+        Quality Report
+      </button>
         <button
           type="button"
           onClick={handleGenerate}
@@ -219,15 +198,7 @@ function commitEdit(index, updatedQuestion) {
         >
           {loading ? "Generating…" : "Generate Questions"}
         </button>
-        <button
-          type="button"
 
-          onClick={handleQualityCheck}
-          disabled={evaluating || !questions || questions.length === 0}
-          className="inline-flex items-center px-3 py-2 text-xs font-medium rounded bg-slate-800 text-white disabled:opacity-50"
-        >
-          {evaluating ? "Checking…" : "Run Quality Check"}
-        </button>
         <button
           type="button"
           onClick={handleStub}
@@ -317,6 +288,13 @@ function commitEdit(index, updatedQuestion) {
       {previewing && questions && questions.length > 0 && (
         <SurveyPreview questions={questions} title={surveyDraft.title} onClose={() => setPreviewing(false)} />
       
+      )}
+
+          {showQualityReport && evaluations && evaluations.length > 0 && (
+      <QualityReportOverlay
+        evaluations={evaluations}
+        onClose={() => setShowQualityReport(false)}
+      />
       )}
     </div>
   );
@@ -663,6 +641,102 @@ function getVisibleQuestions(questions, answers) {
     return evaluateBranchCondition(q.branchCondition, answers);
   });
 }
+
+function QualityReportOverlay({ evaluations, onClose }) {
+  const totalScore = evaluations.reduce((sum, e) => {
+    const rel = (e.llm_scores.relevance / 5) * 25;
+    const clarity = (e.llm_scores.clarity / 5) * 25;
+    const neutrality = (e.llm_scores.neutrality / 5) * 25;
+    const answerability = (e.llm_scores.answerability / 5) * 25;
+    const dupPenalty = e.max_duplicate_similarity > 0.85 ? -10 : 0;
+    const rulePenalty = e.rule_violations.length * -5;
+    return sum + rel + clarity + neutrality + answerability + dupPenalty + rulePenalty;
+  }, 0);
+
+  const avgScore = Math.min(100, Math.max(0, Math.round(totalScore / evaluations.length)));
+
+  const scoreColor = avgScore >= 80 ? "#5BBF8E" : avgScore >= 60 ? "#f59e0b" : "#dc2626";
+  const scoreLabel = avgScore >= 80 ? "Good" : avgScore >= 60 ? "Needs Improvement" : "Poor";
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center overflow-y-auto py-8">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden">
+        <div className="h-1 w-full" style={{ background: "linear-gradient(to right, #5BBF8E, #2AABBA, #1B6B8A)" }} />
+        
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: "#d0eaea" }}>
+          <div>
+            <h2 className="text-base font-bold" style={{ color: "#1B6B8A" }}>Quality Report</h2>
+            <p className="text-xs mt-0.5" style={{ color: "#9ab8c0" }}>{evaluations.length} questions evaluated</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold" style={{ color: scoreColor }}>{avgScore}/100</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${scoreColor}20`, color: scoreColor }}>
+                {scoreLabel}
+              </span>
+            </div>
+            <button type="button" onClick={onClose}
+              className="text-xs font-bold px-3 py-1.5 rounded-full text-white"
+              style={{ backgroundColor: "#1B6B8A" }}>
+              Close
+            </button>
+          </div>
+        </div>
+
+        {/* Questions */}
+        <div className="px-6 py-5 space-y-3" style={{ backgroundColor: "#f0f8f8" }}>
+          {evaluations.map((e, i) => {
+            const issues = [];
+            if (e.llm_scores.relevance < 4) issues.push(`Low relevance (${e.llm_scores.relevance}/5)`);
+            if (e.llm_scores.clarity < 4) issues.push(`Low clarity (${e.llm_scores.clarity}/5)`);
+            if (e.llm_scores.neutrality < 4) issues.push(`Possible bias (${e.llm_scores.neutrality}/5)`);
+            if (e.llm_scores.answerability < 4) issues.push(`Hard to answer (${e.llm_scores.answerability}/5)`);
+            if (e.rule_violations.includes("multiple_questions")) issues.push("Contains multiple questions");
+            if (e.rule_violations.includes("too_long")) issues.push("Question too long");
+            if (e.rule_violations.includes("double_negative")) issues.push("Double negative");
+            if (e.rule_violations.includes("vague_language")) issues.push("Vague language");
+            if (e.rule_violations.includes("leading_language")) issues.push("Leading language");
+            if (e.max_duplicate_similarity > 0.85) issues.push("Too similar to another question");
+            if (e.response_option_issues?.length > 0) issues.push("Response option issues");
+            if (e.skip_logic_issue) issues.push("Branch logic issue");
+            if (e.response_scale_issue) issues.push("Scale inconsistency");
+
+            const isOk = issues.length === 0;
+
+            return (
+              <div key={i} className="rounded-xl border bg-white p-4"
+                style={{ borderColor: isOk ? "#5BBF8E" : "#f59e0b" }}>
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <span className="text-xs font-semibold" style={{ color: "#1B6B8A" }}>{e.question}</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                    style={{ backgroundColor: isOk ? "#e8faf2" : "#fef9ee", color: isOk ? "#5BBF8E" : "#f59e0b" }}>
+                    {isOk ? "✓ OK" : `${issues.length} issue${issues.length > 1 ? "s" : ""}`}
+                  </span>
+                </div>
+                <div className="flex gap-3 text-[10px] flex-wrap mb-1" style={{ color: "#9ab8c0" }}>
+                  <span>Relevance: {e.llm_scores.relevance}/5</span>
+                  <span>Clarity: {e.llm_scores.clarity}/5</span>
+                  <span>Neutrality: {e.llm_scores.neutrality}/5</span>
+                  <span>Var match: {(e.variable_relevance * 100).toFixed(0)}%</span>
+                  <span>Readability: {e.readability}</span>
+                </div>
+                {issues.length > 0 && (
+                  <ul className="mt-1 space-y-0.5">
+                    {issues.map((issue, j) => (
+                      <li key={j} className="text-[11px]" style={{ color: "#b45309" }}>⚠️ {issue}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 /* ------------------------------------------------------------------ */
 /*  Survey preview (interactive, with branching)                      */
