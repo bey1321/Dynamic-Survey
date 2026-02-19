@@ -37,7 +37,13 @@ function HeaderBar() {
           </nav>
         </div>
         <div className="flex items-center gap-2">
-
+          <button
+            type="button"
+            onClick={resetDemoData}
+            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+          >
+            Reset Data
+          </button>
         </div>
       </div>
     </header>
