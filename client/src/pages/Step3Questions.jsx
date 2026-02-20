@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { useSurvey } from "../state/SurveyContext";
 import { useToast } from "../state/ToastContext";
 import { SurveyFlowVisualization } from "../components/SurveyFlowVisualization";
@@ -46,17 +45,17 @@ function Step3Questions() {
     questionsState,
     setQuestionsFromAI,
     updateQuestions,
-    completeQualityCheck,
-    setEvaluations
+    setEvaluations,
+    evaluations,
+    approveQuestions,
   } = useSurvey();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [activeTab, setActiveTab] = useState("questions");
-  const [evaluating, setEvaluating] = useState(false);
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
-  const navigate = useNavigate();
+  const [showQualityReport, setShowQualityReport] = useState(false);
 
   const questions = questionsState.questions;
 
@@ -88,6 +87,7 @@ function Step3Questions() {
 
       if (Array.isArray(data.questions) && data.questions.length > 0) {
         setQuestionsFromAI(data.questions);
+        if (data.evaluations) setEvaluations(data.evaluations);
         console.log(data.questions)
         showToast("Questions generated successfully.");
       } else {
@@ -101,39 +101,16 @@ function Step3Questions() {
     }
   }
 
-  async function handleQualityCheck() {
+  function handleApprove() {
   if (!questions || questions.length === 0) {
-    showToast("Generate questions first before running quality check.");
+    showToast("Generate questions before approving.");
     return;
   }
-
-  setEvaluating(true);
-  try {
-    const res = await fetch("http://localhost:4000/api/evaluate-questions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        questions,
-        topic: surveyDraft?.goal || surveyDraft?.title || "general survey"
-      })
-    });
-    const data = await res.json();
-
-    if (data.evaluations) {
-    setEvaluations(data.evaluations);
-    completeQualityCheck();
-    showToast("Quality check complete — see Step 4.");
-    navigate("/step/4-audit"); 
-    } else {
-      showToast("Quality check failed — no results returned.");
-    }
-  } catch (err) {
-    console.error("Quality check failed:", err);
-    showToast("Quality check failed — check server logs.");
-  } finally {
-    setEvaluating(false);
-  }
+  setEditingId(null);
+  approveQuestions();
+  showToast("Questions approved — Step 4 unlocked.");
 }
+
 
 function commitEdit(index, updatedQuestion) {
   const next = questions.map((q, i) => (i === index ? updatedQuestion : q));
@@ -275,12 +252,24 @@ function commitEdit(index, updatedQuestion) {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={handleQualityCheck}
-                disabled={evaluating || !questions || questions.length === 0}
-                className="inline-flex items-center px-3 py-2 text-xs font-medium rounded-full bg-slate-800 text-white disabled:opacity-50"
+                onClick={() => setShowQualityReport(true)}
+                disabled={!evaluations || evaluations.length === 0}
+                className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
+                style={{ borderColor: "#536b6e", color: "#1B6B8A" }}
               >
-                {evaluating ? "Checking…" : "Run Quality Check"}
+                Quality Report
               </button>
+
+              <button
+                type="button"
+                onClick={handleApprove}
+                disabled={!questions || questions.length === 0}
+                className="ml-auto text-xs font-bold px-4 py-2 rounded-full text-white disabled:opacity-40"
+                style={{ backgroundColor: "#5BBF8E" }}
+              >
+                Approve Draft
+              </button>
+              
               <button
                 type="button"
                 onClick={handleAddQuestion}
@@ -348,6 +337,12 @@ function commitEdit(index, updatedQuestion) {
           <SurveyPreview questions={questions} title={surveyDraft?.title} inline />
         )}
 
+        {showQualityReport && evaluations && evaluations.length > 0 && (
+        <QualityReportOverlay
+          evaluations={evaluations}
+          onClose={() => setShowQualityReport(false)}
+        />
+        )}
         {/* ── Flow tab ── */}
         {activeTab === "flow" && questions && questions.length > 0 && (
           <div className="rounded-xl border overflow-hidden" style={{ borderColor: "#d0eaea", height: "560px" }}>
