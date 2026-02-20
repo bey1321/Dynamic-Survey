@@ -1,4 +1,3 @@
-import React from "react";
 import SidebarStepper from "./SidebarStepper";
 import HeaderBar from "./HeaderBar";
 import ToastContainer from "./ToastContainer";
@@ -28,4 +27,3 @@ function Layout({ children }) {
 }
 
 export default Layout;
-

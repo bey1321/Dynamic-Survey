@@ -297,6 +297,47 @@ export function buildChatSystemPrompt(context) {
     .replace("{{controls}}", controls);
 }
 
+export function buildAddQuestionsUserPrompt(surveyDraft, variableModel, existingQuestions, count) {
+  const {
+    title = "",
+    goal = "",
+    population = "",
+    language = [],
+    tone = "",
+  } = surveyDraft || {};
+
+  const model = variableModel || {};
+  const dependent = Array.isArray(model.dependent) ? model.dependent.join(", ") : "";
+  const drivers = Array.isArray(model.drivers) ? model.drivers.join(", ") : "";
+  const controls = Array.isArray(model.controls) ? model.controls.join(", ") : "";
+
+  const existingTexts =
+    Array.isArray(existingQuestions) && existingQuestions.length > 0
+      ? existingQuestions.map((q, i) => `- q${i + 1}: "${q.text}" (${q.type})`).join("\n")
+      : "None";
+
+  const nextId = (existingQuestions?.length || 0) + 1;
+
+  return `Add exactly ${count} new survey question(s) to supplement the existing survey below.
+
+═══ SURVEY CONFIGURATION ═══
+- Title: ${title}
+- Goal: ${goal}
+- Population: ${population}
+- Language(s): ${Array.isArray(language) ? language.join(" + ") : String(language)}
+- Tone: ${tone}
+
+═══ VARIABLE MODEL ═══
+Dependent variable(s): ${dependent}
+Driver variables: ${drivers}
+Control variables: ${controls}
+
+═══ EXISTING QUESTIONS (DO NOT DUPLICATE) ═══
+${existingTexts}
+
+Generate EXACTLY ${count} new question(s) that do not duplicate the questions above. Assign IDs starting from q${nextId}. Return ONLY the JSON object with a "questions" array containing exactly ${count} item(s).`;
+}
+
 export function buildRegenerationFeedbackPrompt(userFeedback, evaluations) {
   const issues = evaluations
     ? evaluations

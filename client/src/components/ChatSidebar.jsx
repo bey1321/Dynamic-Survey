@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { X, Send, Loader, Trash2, RotateCcw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { X, Send, Loader, Trash2 } from 'lucide-react';
 import { useChat } from '../state/ChatContext';
 import { useSurvey } from '../state/SurveyContext';
 import { useToast } from '../state/ToastContext';
@@ -13,7 +13,6 @@ export const ChatSidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -28,27 +27,16 @@ export const ChatSidebar = () => {
     const contextToSend = {
       currentStep: conversationContext.currentStep,
       surveyDraft,
-      variableModel,
+      variableModel: variableModel?.model,
       questions: questionsState?.questions || [],
       evaluations: evaluations || [],
     };
 
-    console.log("📤 ChatSidebar sending to /api/chat:", {
-      message: userInput,
-      context: {
-        currentStep: contextToSend.currentStep,
-        hasQuestions: Array.isArray(contextToSend.questions),
-        questionCount: contextToSend.questions?.length,
-        firstQuestion: contextToSend.questions?.[0]?.text?.substring(0, 40)
-      }
-    });
-
     const response = await sendChatMessage(userInput, contextToSend);
 
     if (response?.regeneratedQuestions) {
-      console.log("✅ Received regeneratedQuestions:", response.regeneratedQuestions.length, "questions");
       setQuestionsFromAI(response.regeneratedQuestions);
-      showToast('Questions regenerated based on your feedback!');
+      showToast('Questions updated based on your feedback!');
     }
   };
 
@@ -59,6 +47,7 @@ export const ChatSidebar = () => {
     }
   };
 
+  // ── Closed: floating bubble button ───────────────────────────────────────
   if (!isOpen) {
     return (
       <button
@@ -73,6 +62,7 @@ export const ChatSidebar = () => {
     );
   }
 
+  // ── Open: fixed floating panel (400 × 600, bottom-right) ─────────────────
   return (
     <div className="fixed bottom-6 right-6 w-96 h-[600px] bg-white rounded-lg shadow-2xl flex flex-col z-50 border border-gray-200">
       {/* Header */}
@@ -146,7 +136,6 @@ export const ChatSidebar = () => {
           </button>
         </form>
 
-        {/* Action buttons */}
         <div className="flex gap-2">
           <button
             onClick={handleClearChat}
@@ -159,24 +148,23 @@ export const ChatSidebar = () => {
           </button>
         </div>
 
-        {/* Suggestions */}
         {messages.length === 0 && (
           <div className="space-y-2 text-xs">
             <p className="text-gray-600 font-medium">Try asking:</p>
             <button
-              onClick={() => setInput("Make the questions simpler")}
+              onClick={() => setInput('Make the questions simpler')}
               className="block w-full text-left px-2 py-1 text-gray-600 hover:text-blue-600 hover:bg-white rounded transition"
             >
               • "Make the questions simpler"
             </button>
             <button
-              onClick={() => setInput("Regenerate the questions")}
+              onClick={() => setInput('Regenerate the questions')}
               className="block w-full text-left px-2 py-1 text-gray-600 hover:text-blue-600 hover:bg-white rounded transition"
             >
               • "Regenerate the questions"
             </button>
             <button
-              onClick={() => setInput("Explain the quality issues")}
+              onClick={() => setInput('Explain the quality issues')}
               className="block w-full text-left px-2 py-1 text-gray-600 hover:text-blue-600 hover:bg-white rounded transition"
             >
               • "Explain the quality issues"

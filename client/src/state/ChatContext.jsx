@@ -86,7 +86,8 @@ export const ChatProvider = ({ children }) => {
         return data;
       } catch (err) {
         if (err.name === 'AbortError') {
-          // Request was cancelled, don't show error
+          // Request was cancelled — clear loading state so spinner doesn't get stuck
+          setIsLoading(false);
           return null;
         }
         const errorMsg = err.message || 'Failed to send message';
