@@ -194,9 +194,11 @@ Dependent variable(s): {{dependent}}
 Driver variables: {{drivers}}
 Control variables: {{controls}}
 
+{{previousQuestionsSection}}
+
 Generate up to {{maxQuestions}} questions following the system instructions. Return ONLY the JSON object.`;
 
-export function buildQuestionGenUserPrompt(surveyDraft, variableModel) {
+export function buildQuestionGenUserPrompt(surveyDraft, variableModel, previousQuestions = null) {
   const {
     title = "",
     goal = "",
@@ -213,6 +215,19 @@ export function buildQuestionGenUserPrompt(surveyDraft, variableModel) {
   const drivers = Array.isArray(model.drivers) ? model.drivers.join(", ") : "";
   const controls = Array.isArray(model.controls) ? model.controls.join(", ") : "";
 
+  // Build previousQuestionsSection if questions exist
+  let previousQuestionsSection = "";
+  if (Array.isArray(previousQuestions) && previousQuestions.length > 0) {
+    const previousTexts = previousQuestions.map(q => `- "${q.text}" (${q.type})`).join("\n");
+    previousQuestionsSection = `═══ IMPORTANT: AVOID THESE PREVIOUS QUESTIONS ═══
+Do NOT regenerate these exact questions. Generate completely different questions with different wording, structure, and approach while measuring the same variables:
+${previousTexts}
+
+When regenerating, use alternative phrasings, different question types where possible, and different approaches to measure the same constructs.
+
+`;
+  }
+
   return QUESTION_GEN_USER_PROMPT_TEMPLATE
     .replace("{{title}}", title)
     .replace("{{goal}}", goal)
@@ -224,6 +239,79 @@ export function buildQuestionGenUserPrompt(surveyDraft, variableModel) {
     .replace(/\{\{maxQuestions\}\}/g, String(maxQuestions))
     .replace("{{dependent}}", dependent)
     .replace("{{drivers}}", drivers)
+    .replace("{{controls}}", controls)
+    .replace("{{previousQuestionsSection}}", previousQuestionsSection);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Chat System Prompt                                                */
+/* ------------------------------------------------------------------ */
+
+export const CHAT_SYSTEM_PROMPT_TEMPLATE = `You are a helpful survey methodology consultant and expert questionnaire designer. Your role is to assist users in creating high-quality surveys.
+
+You can help with:
+1. **Clarifying survey requirements** - Help users refine their survey scope, goal, and population
+2. **Explaining quality issues** - When questions fail quality checks, explain the issues in plain language
+3. **Suggesting improvements** - Recommend how to improve question wording, tone, or structure
+4. **Regenerating questions** - When users provide feedback, help generate better questions
+5. **Offering guidance** - Answer questions about survey design best practices
+
+Current Context:
+- Survey: {{surveyTitle}} (Goal: {{surveyGoal}})
+- Population: {{population}}
+- Current step: Step {{currentStep}} of 8
+- Variable model: Dependent={{dependent}}, Drivers={{drivers}}, Controls={{controls}}
+
+When a user provides feedback about questions (e.g., "Make them simpler" or "Focus on satisfaction"), acknowledge their feedback and prepare to regenerate with those improvements in mind.
+
+Keep responses concise, friendly, and professional. Use the user's language (ask in English, respond in English).`;
+
+export function buildChatSystemPrompt(context) {
+  const {
+    surveyDraft = {},
+    variableModel = {},
+    currentStep = 1,
+  } = context || {};
+
+  const title = surveyDraft.title || "Untitled Survey";
+  const goal = surveyDraft.goal || "Not specified";
+  const population = surveyDraft.population || "Not specified";
+  const dependent = Array.isArray(variableModel.dependent)
+    ? variableModel.dependent.join(", ")
+    : "Not specified";
+  const drivers = Array.isArray(variableModel.drivers)
+    ? variableModel.drivers.join(", ")
+    : "Not specified";
+  const controls = Array.isArray(variableModel.controls)
+    ? variableModel.controls.join(", ")
+    : "Not specified";
+
+  return CHAT_SYSTEM_PROMPT_TEMPLATE
+    .replace("{{surveyTitle}}", title)
+    .replace("{{surveyGoal}}", goal)
+    .replace("{{population}}", population)
+    .replace("{{dependency}}", dependent)
+    .replace("{{currentStep}}", String(currentStep))
+    .replace("{{dependent}}", dependent)
+    .replace("{{drivers}}", drivers)
     .replace("{{controls}}", controls);
+}
+
+export function buildRegenerationFeedbackPrompt(userFeedback, evaluations) {
+  const issues = evaluations
+    ? evaluations
+        .filter((e) => e.hasIssues)
+        .map((e) => `- Q${e.questionId}: ${e.issues.join(", ")}`)
+        .join("\n")
+    : "";
+
+  return `User feedback for regeneration:
+"${userFeedback}"
+
+${
+  issues
+    ? `Current quality issues:\n${issues}\n\nPlease regenerate the questions addressing the user feedback above and resolving these quality issues.`
+    : "Please regenerate the questions based on the user feedback above."
+}`;
 }
 

@@ -4,6 +4,7 @@ import { useSurvey } from "../state/SurveyContext";
 import { StepNavProvider } from "../state/StepNavContext";
 import HorizontalStepper from "./HorizontalStepper";
 import ToastContainer from "./ToastContainer";
+import { ChatSidebar } from "./ChatSidebar";
 import rakscLogo from "../assets/raksc-logo.png";
 
 function LayoutClean({ children }) {
@@ -65,6 +66,7 @@ function LayoutClean({ children }) {
       />
 
       <ToastContainer />
+      <ChatSidebar />
     </div>
   );
 }

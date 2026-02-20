@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useSurvey } from "../state/SurveyContext";
 import { useToast } from "../state/ToastContext";
+import { useChat } from "../state/ChatContext";
 import { SurveyFlowVisualization } from "../components/SurveyFlowVisualization";
-import { List, Eye, Workflow } from "lucide-react";
+import { List, Eye, Workflow, RotateCcw } from "lucide-react";
 
 const TYPE_LABELS = {
   likert: "Likert",
@@ -50,6 +51,7 @@ function Step3Questions() {
     approveQuestions,
   } = useSurvey();
   const { showToast } = useToast();
+  const { updateConversationContext } = useChat();
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [activeTab, setActiveTab] = useState("questions");
@@ -63,6 +65,11 @@ function Step3Questions() {
     if (questions && questions.length > 0) return;
     if (!variableModel.model) return;
     handleGenerate();
+  }, []);
+
+  useEffect(() => {
+    // Update chat context for step 3
+    updateConversationContext({ currentStep: 3 });
   }, []);
 
   async function handleGenerate() {
@@ -96,6 +103,41 @@ function Step3Questions() {
     } catch (err) {
       console.error("Question generation failed:", err);
       showToast("Generation failed — check server logs.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRegenerate() {
+    if (loading) return;
+    if (!questions || questions.length === 0) {
+      showToast("No questions to regenerate.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("http://localhost:4000/api/generate-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          surveyDraft: { ...surveyDraft, feedback: "Regenerate with completely different questions" },
+          variableModel: variableModel.model,
+          previousQuestions: questions
+        })
+      });
+      const data = await res.json();
+
+      if (Array.isArray(data.questions) && data.questions.length > 0) {
+        setQuestionsFromAI(data.questions);
+        if (data.evaluations) setEvaluations(data.evaluations);
+        showToast("Questions regenerated successfully.");
+      } else {
+        showToast("Regeneration failed.");
+      }
+    } catch (err) {
+      console.error("Question regeneration failed:", err);
+      showToast("Regeneration failed — check server logs.");
     } finally {
       setLoading(false);
     }
@@ -258,6 +300,18 @@ function commitEdit(index, updatedQuestion) {
                 style={{ borderColor: "#536b6e", color: "#1B6B8A" }}
               >
                 Quality Report
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRegenerate}
+                disabled={!questions || questions.length === 0 || loading}
+                className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40 flex items-center gap-1.5"
+                style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
+                title="Regenerate questions with improvements"
+              >
+                <RotateCcw size={13} />
+                Regenerate
               </button>
 
               <button

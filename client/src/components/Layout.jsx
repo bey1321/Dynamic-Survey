@@ -2,6 +2,7 @@ import React from "react";
 import SidebarStepper from "./SidebarStepper";
 import HeaderBar from "./HeaderBar";
 import ToastContainer from "./ToastContainer";
+import { ChatSidebar } from "./ChatSidebar";
 import { StepNavProvider } from "../state/StepNavContext";
 
 function Layout({ children }) {
@@ -21,6 +22,7 @@ function Layout({ children }) {
         </main>
       </div>
       <ToastContainer />
+      <ChatSidebar />
     </div>
   );
 }

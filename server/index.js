@@ -10,7 +10,9 @@ import {
   SURVEY_CONFIG_SYSTEM_PROMPT,
   buildSurveyConfigUserPrompt,
   QUESTION_GEN_SYSTEM_PROMPT,
-  buildQuestionGenUserPrompt
+  buildQuestionGenUserPrompt,
+  buildChatSystemPrompt,
+  buildRegenerationFeedbackPrompt
 } from "../shared/promptTemplates.js";
 import { FALLBACK_VARIABLE_MODEL, HEALTHCARE_EXAMPLE_SURVEY, FALLBACK_QUESTIONS } from "../shared/demoData.js";
 import {
@@ -22,6 +24,11 @@ import { GoogleGenAI } from "@google/genai";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, ".env") });
+
+// Debug: Check if env vars are loaded
+console.log("🔍 DEBUG - Checking env variables:");
+console.log("open_router:", process.env.open_router ? "✓ Loaded" : "✗ Missing");
+console.log("model:", process.env.model ? "✓ Loaded" : "✗ Missing");
 
 const app = express();
 app.use(cors());
@@ -169,8 +176,49 @@ async function callGemmaForSurveyConfig(text) {
 
 const VALID_QUESTION_TYPES = new Set(["likert", "multiple_choice", "multi_select", "yes_no", "open_ended", "rating"]);
 
-async function callGemmaForQuestions(surveyDraft, variableModel) {
-  const userPrompt = buildQuestionGenUserPrompt(surveyDraft, variableModel);
+// Helper function to remove questions by index or position
+function removeQuestionsFromList(questions, message = "", count = 1) {
+  if (!Array.isArray(questions) || questions.length === 0) return questions;
+
+  const lowerMsg = message.toLowerCase();
+  const toRemove = Math.min(count, questions.length - 1); // Keep at least 1
+
+  // Check for specific position keywords
+  if (/first|[#1]/.test(lowerMsg)) {
+    // Remove first N questions
+    return questions.slice(toRemove);
+  } else if (/last/.test(lowerMsg)) {
+    // Remove last N questions
+    return questions.slice(0, questions.length - toRemove);
+  } else if (/middle|center/.test(lowerMsg)) {
+    // Remove from middle
+    const start = Math.floor(questions.length / 2);
+    return [...questions.slice(0, start), ...questions.slice(start + toRemove)];
+  } else {
+    // Default: remove from end
+    return questions.slice(0, questions.length - toRemove);
+  }
+}
+
+// Helper function to add random questions
+async function addQuestionsToList(questions, surveyDraft, variableModel, count = 1) {
+  if (!Array.isArray(questions)) return questions;
+
+  try {
+    const result = await callGemmaForQuestions(surveyDraft, variableModel, questions);
+    if (Array.isArray(result.questions)) {
+      // Only add the new questions that weren't in the original set
+      const newQuestions = result.questions.slice(Math.max(0, result.questions.length - count));
+      return [...questions, ...newQuestions];
+    }
+  } catch (err) {
+    console.error("Failed to add questions:", err);
+  }
+  return questions;
+}
+
+async function callGemmaForQuestions(surveyDraft, variableModel, previousQuestions = null) {
+  const userPrompt = buildQuestionGenUserPrompt(surveyDraft, variableModel, previousQuestions);
   const parsed = await callGemma(userPrompt, QUESTION_GEN_SYSTEM_PROMPT, FALLBACK_QUESTIONS);
 
   if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
@@ -206,19 +254,18 @@ async function callGemmaForQuestions(surveyDraft, variableModel) {
 }
 
 // ---------------------------------------------------------------------------
-// MAX_REGEN_ATTEMPTS: how many times we'll try to improve questions before
-// giving up and returning the best result so far.
-// Attempt 1 = initial generation
-// Attempts 2..MAX = regeneration rounds
+// MAX_REGEN_ATTEMPTS: Reduced to 2 for efficiency
+// Attempt 1 = initial generation + evaluation
+// Attempt 2 = fast regeneration check based on rule violations only
 // ---------------------------------------------------------------------------
-const MAX_REGEN_ATTEMPTS = 4;
+const MAX_REGEN_ATTEMPTS = 2;
 
 app.post("/api/generate-questions", async (req, res) => {
-  const { surveyDraft, variableModel } = req.body || {};
+  const { surveyDraft, variableModel, previousQuestions } = req.body || {};
 
   try {
     const topic = surveyDraft?.goal || surveyDraft?.title || "general survey";
-    let currentResult = await callGemmaForQuestions(surveyDraft, variableModel);
+    let currentResult = await callGemmaForQuestions(surveyDraft, variableModel, previousQuestions);
 
     if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) {
       return res.json(currentResult);
@@ -249,9 +296,23 @@ app.post("/api/generate-questions", async (req, res) => {
     try {
       for (let attempt = 1; attempt <= MAX_REGEN_ATTEMPTS; attempt++) {
         attemptsMade = attempt;
-        const evals = await evaluateQuestions(topic, currentResult.questions, callGemma);
-        const issueCount = countIssues(evals);
 
+        // Only evaluate on last attempt to save API calls
+        let evals = null;
+        if (attempt === MAX_REGEN_ATTEMPTS) {
+          evals = await evaluateQuestions(topic, currentResult.questions, callGemma);
+        } else {
+          // Quick validation without LLM scoring for earlier attempts
+          console.log(`[Attempt ${attempt}] Skipping full evaluation to save API calls...`);
+          bestResult = currentResult;
+          const feedback = buildRegenerationFeedback([], topic);
+          currentResult = await callGemmaForQuestions({ ...surveyDraft, feedback }, variableModel, previousQuestions);
+          regenerated = true;
+          if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) break;
+          continue;
+        }
+
+        const issueCount = countIssues(evals);
         console.log(`[Attempt ${attempt}] issues: ${issueCount}, needRegeneration: ${needRegeneration(evals)}`);
 
         if (issueCount < bestIssueCount) {
@@ -266,12 +327,6 @@ app.post("/api/generate-questions", async (req, res) => {
           console.warn(`[Attempt ${attempt}] Max attempts reached. Best had ${bestIssueCount} issue(s).`);
           break;
         }
-
-        const feedback = buildRegenerationFeedback(evals, topic);
-        currentResult = await callGemmaForQuestions({ ...surveyDraft, feedback }, variableModel);
-        regenerated = true;
-
-        if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) break;
       }
 
       return res.json({ ...bestResult, evaluations: bestEvals, regenerated, attemptsMade });
@@ -332,6 +387,183 @@ app.post("/api/evaluate-questions", async (req, res) => {
   } catch (err) {
     console.error("Error in /api/evaluate-questions:", err);
     res.status(500).json({ error: "Evaluation failed" });
+  }
+});
+
+app.post("/api/chat", async (req, res) => {
+  const { message, context = {}, conversationHistory = [], action = "chat" } = req.body || {};
+
+  if (!message || typeof message !== "string") {
+    return res.status(400).json({ error: "Message is required" });
+  }
+
+  try {
+    // Build context-aware system prompt
+    const systemPrompt = buildChatSystemPrompt(context);
+
+    // Detect intent from message (add, remove, edit, regenerate questions)
+    const lowerMessage = message.toLowerCase();
+    const hasAddIntent = /add|create|new question|more question|more|additional/i.test(lowerMessage);
+    const hasRemoveIntent = /remove|delete|less question|fewer question|remove.*question|delete.*question/i.test(lowerMessage);
+    const hasEditIntent = /simpler|shorter|longer|clearer|different|change|reword|modify|edit/i.test(lowerMessage);
+
+    console.log("🔍 CHAT DEBUG:", { lowerMessage, hasRemoveIntent, hasAddIntent, hasEditIntent, questionCount: context.questions?.length });
+    console.log("📋 context.questions structure:", {
+      isArray: Array.isArray(context.questions),
+      length: context.questions?.length,
+      type: typeof context.questions,
+      first3: context.questions?.slice(0, 3)?.map(q => ({ id: q.id, text: q.text?.substring(0, 30) }))
+    });
+
+    // If user wants to modify questions and has questions, handle it
+    if ((hasAddIntent || hasRemoveIntent || hasEditIntent) && Array.isArray(context.questions) && context.questions.length > 0) {
+      console.log("✅ Entering modification block");
+      let modifiedQuestions = context.questions;
+      let actionLabel = "modified";
+
+      // Handle remove intent
+      if (hasRemoveIntent) {
+        console.log("🗑️  Handling REMOVE intent");
+        // Extract number if mentioned (e.g., "remove 2 questions")
+        const numberMatch = lowerMessage.match(/(\d+)/);
+        const countToRemove = numberMatch ? parseInt(numberMatch[1]) : 1;
+        console.log(`Removing ${countToRemove} questions from ${context.questions.length} total`);
+        modifiedQuestions = removeQuestionsFromList(context.questions, lowerMessage, countToRemove);
+        console.log(`After removal: ${modifiedQuestions.length} questions`);
+        console.log(`First question after removal:`, modifiedQuestions[0]?.text?.substring(0, 40));
+        actionLabel = `removed ${countToRemove}`;
+      }
+      // Handle add intent
+      else if (hasAddIntent) {
+        console.log("➕ Handling ADD intent");
+        // Extract number if mentioned (e.g., "add 3 questions")
+        const numberMatch = lowerMessage.match(/(\d+)/);
+        const countToAdd = numberMatch ? parseInt(numberMatch[1]) : 1;
+        modifiedQuestions = await addQuestionsToList(context.questions, context.surveyDraft, context.variableModel, countToAdd);
+        actionLabel = `added ${countToAdd}`;
+      }
+      // Handle edit intent - regenerate with feedback
+      else if (hasEditIntent) {
+        console.log("✏️  Handling EDIT intent");
+        const feedbackPrompt = buildRegenerationFeedbackPrompt(message, context.evaluations);
+        const improvementResult = await callGemmaForQuestions(
+          {
+            ...context.surveyDraft,
+            feedback: feedbackPrompt
+          },
+          context.variableModel,
+          context.questions
+        );
+        if (improvementResult && Array.isArray(improvementResult.questions)) {
+          modifiedQuestions = improvementResult.questions;
+        }
+        actionLabel = "updated";
+      }
+
+      // Re-number questions after modification
+      const renumberedQuestions = modifiedQuestions.map((q, idx) => ({
+        ...q,
+        id: `q${idx + 1}`
+      }));
+
+      console.log("📤 Sending back response with", renumberedQuestions.length, "questions");
+      console.log("📤 Response includes regeneratedQuestions:", Array.isArray(renumberedQuestions));
+      console.log("📤 First renumbered question:", renumberedQuestions[0]?.id, "-", renumberedQuestions[0]?.text?.substring(0, 40));
+
+      return res.json({
+        message: `I've ${actionLabel} the questions. Here are the updated questions.`,
+        action: "questions_regenerated",
+        regeneratedQuestions: renumberedQuestions,
+        regenerationFeedback: message,
+      });
+    } else {
+      console.log("❌ Did NOT enter modification block. Conditions:", {
+        hasIntent: hasAddIntent || hasRemoveIntent || hasEditIntent,
+        isArray: Array.isArray(context.questions),
+        hasLength: context.questions?.length > 0,
+        questionsValue: context.questions
+      });
+    }
+
+    // Handle explicit regeneration action
+    if (action === "regenerate_questions" && Array.isArray(context.questions) && context.questions.length > 0) {
+      const feedbackPrompt = buildRegenerationFeedbackPrompt(message, context.evaluations);
+
+      // Generate improved questions
+      const improvementResult = await callGemmaForQuestions(
+        {
+          ...context.surveyDraft,
+          feedback: feedbackPrompt
+        },
+        context.variableModel,
+        context.questions
+      );
+
+      if (improvementResult && Array.isArray(improvementResult.questions) && improvementResult.questions.length > 0) {
+        const responseMessage =
+          "I've regenerated the questions based on your feedback. The new questions aim to address your concerns while maintaining survey quality.";
+
+        return res.json({
+          message: responseMessage,
+          action: "questions_regenerated",
+          regeneratedQuestions: improvementResult.questions,
+          regenerationFeedback: message,
+        });
+      }
+    }
+
+    // Standard chat response (no question modifications)
+    const fullConversationHistory = [
+      ...conversationHistory.slice(-10), // Keep last 10 messages for context
+      { role: "user", content: message }
+    ];
+
+    const messages = [
+      { role: "system", content: systemPrompt },
+      ...fullConversationHistory
+    ];
+
+    // Call Gemma for chat response
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "Dynamic Survey Generator"
+      },
+      body: JSON.stringify({
+        model: GEMMA_MODEL,
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: m.content
+        }))
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ OpenRouter API error:", response.status, errorText);
+      return res.json({
+        message: "I apologize, but I couldn't process your request at this moment. Please try again.",
+        action: "chat"
+      });
+    }
+
+    const data = await response.json();
+    const chatMessage = data.choices?.[0]?.message?.content || "I'm unable to respond right now. Please try again.";
+
+    res.json({
+      message: chatMessage,
+      action: "chat"
+    });
+
+  } catch (err) {
+    console.error("Error in /api/chat:", err);
+    res.status(500).json({
+      message: "An error occurred while processing your request. Please try again.",
+      action: "chat"
+    });
   }
 });
 
