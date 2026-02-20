@@ -10,6 +10,7 @@ import {
   buildSurveyConfigUserPrompt,
   QUESTION_GEN_SYSTEM_PROMPT,
   buildQuestionGenUserPrompt,
+  buildAddQuestionsUserPrompt,
   buildChatSystemPrompt,
   buildRegenerationFeedbackPrompt
 } from "../shared/promptTemplates.js";
@@ -166,10 +167,23 @@ async function addQuestionsToList(questions, surveyDraft, variableModel, count =
   if (!Array.isArray(questions)) return questions;
 
   try {
-    const result = await callGemmaForQuestions(surveyDraft, variableModel, questions, "Chat — Add Questions");
-    if (Array.isArray(result.questions)) {
-      const newQuestions = result.questions.slice(Math.max(0, result.questions.length - count));
-      return [...questions, ...newQuestions];
+    const addPrompt = buildAddQuestionsUserPrompt(surveyDraft, variableModel, questions, count);
+    const result = await callGemma(addPrompt, QUESTION_GEN_SYSTEM_PROMPT, { questions: [] }, false, `Chat — Add ${count} Question(s)`);
+
+    if (Array.isArray(result?.questions) && result.questions.length > 0) {
+      const validated = result.questions
+        .filter(
+          (q) =>
+            typeof q.id === "string" &&
+            typeof q.text === "string" &&
+            VALID_QUESTION_TYPES.has(q.type) &&
+            Array.isArray(q.options)
+        )
+        .slice(0, count); // never add more than requested
+
+      if (validated.length > 0) {
+        return [...questions, ...validated];
+      }
     }
   } catch (err) {
     console.error("Failed to add questions:", err);
@@ -362,9 +376,9 @@ app.post("/api/chat", async (req, res) => {
   try {
     const systemPrompt = buildChatSystemPrompt(context);
     const lowerMessage = message.toLowerCase();
-    const hasAddIntent = /add|create|new question|more question|more|additional/i.test(lowerMessage);
+    const hasAddIntent = /add.*question|add\s+\d+|create.*question|new question|more question|\d+\s+more\s+question|additional.*question/i.test(lowerMessage);
     const hasRemoveIntent = /remove|delete|less question|fewer question|remove.*question|delete.*question/i.test(lowerMessage);
-    const hasEditIntent = /simpler|shorter|longer|clearer|different|change|reword|modify|edit/i.test(lowerMessage);
+    const hasEditIntent = /simpler|shorter|longer|clearer|different|change|reword|modify|edit|regenerate|improve/i.test(lowerMessage);
 
     // Handle question modifications
     if ((hasAddIntent || hasRemoveIntent || hasEditIntent) && Array.isArray(context.questions) && context.questions.length > 0) {

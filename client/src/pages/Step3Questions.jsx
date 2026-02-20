@@ -5,7 +5,7 @@ import { useToast } from "../state/ToastContext";
 import { useChat } from "../state/ChatContext";
 import { SurveyFlowVisualization } from "../components/SurveyFlowVisualization";
 import { QuestionEditorSidebar } from "../components/QuestionEditorSidebar";
-import { List, Eye, Workflow, RotateCcw } from "lucide-react";
+import { List, Eye, Workflow, RotateCcw, ChevronLeft } from "lucide-react";
 
 const TYPE_LABELS = {
   likert: "Likert",
@@ -429,10 +429,25 @@ function commitEdit(index, updatedQuestion) {
       </div>
 
       {/* Question Editor Sidebar - Only on Step 3 with questions */}
-      {questions && questions.length > 0 && (
-        <div className="w-96 border-l border-gray-200 bg-white" style={{ maxHeight: "calc(100vh - 120px)" }}>
-          <QuestionEditorSidebar questions={questions} evaluations={evaluations} />
+      {questions && questions.length > 0 && !sidebarCollapsed && (
+        <div className="w-96 shrink-0 border-l border-gray-200 bg-white" style={{ maxHeight: "calc(100vh - 120px)" }}>
+          <QuestionEditorSidebar
+            questions={questions}
+            evaluations={evaluations}
+            onCollapse={() => setSidebarCollapsed(true)}
+          />
         </div>
+      )}
+
+      {/* Expand button shown when sidebar is collapsed */}
+      {questions && questions.length > 0 && sidebarCollapsed && (
+        <button
+          onClick={() => setSidebarCollapsed(false)}
+          className="fixed right-6 top-1/2 -translate-y-1/2 w-10 h-10 bg-gradient-to-br from-teal-500 to-blue-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-110 transition-all z-30 flex items-center justify-center"
+          title="Expand Question Editor"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
       )}
     </div>
   );

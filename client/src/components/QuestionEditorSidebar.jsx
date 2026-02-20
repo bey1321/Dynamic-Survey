@@ -1,17 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Send, Trash2 } from 'lucide-react';
+import { ChevronRight, Send, Trash2 } from 'lucide-react';
 import { useSurvey } from '../state/SurveyContext';
 import { useToast } from '../state/ToastContext';
 import { ChatMessage } from './ChatMessage';
 
-export const QuestionEditorSidebar = ({ questions = [], evaluations = [] }) => {
+export const QuestionEditorSidebar = ({ questions = [], evaluations = [], onCollapse }) => {
   const { surveyDraft, variableModel, questionsState, setQuestionsFromAI } = useSurvey();
   const { showToast } = useToast();
 
   // Separate chat state for sidebar (independent from floating chat)
   const [sidebarMessages, setSidebarMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
 
@@ -84,26 +83,20 @@ export const QuestionEditorSidebar = ({ questions = [], evaluations = [] }) => {
     }
   };
 
-  if (isCollapsed) {
-    return (
-      <button
-        onClick={() => setIsCollapsed(false)}
-        className="fixed right-6 top-1/2 transform -translate-y-1/2 w-12 h-12 bg-gradient-to-br from-teal-500 to-blue-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-110 transition-all z-30 flex items-center justify-center"
-        title="Expand editor"
-      >
-        <ChevronLeft className="w-6 h-6" />
-      </button>
-    );
-  }
-
   return (
-    <div className="w-full h-full bg-white border-l border-gray-200 flex flex-col">
+    <div className="w-full h-full bg-white flex flex-col" style={{ borderLeft: "1px solid #d0eaea" }}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-r from-teal-50 to-blue-50 shrink-0">
-        <h3 className="font-semibold text-gray-800">Question Editor</h3>
+      <div
+        className="flex items-center justify-between p-4 shrink-0"
+        style={{ borderBottom: "1px solid #d0eaea", backgroundColor: "#f0f8f8" }}
+      >
+        <h3 className="font-semibold text-sm" style={{ color: "#1B6B8A" }}>Question Editor</h3>
         <button
-          onClick={() => setIsCollapsed(true)}
-          className="text-gray-500 hover:text-gray-700 transition p-1"
+          onClick={onCollapse}
+          className="transition p-1 rounded"
+          style={{ color: "#9ab8c0" }}
+          onMouseEnter={e => { e.currentTarget.style.color = "#1B6B8A"; }}
+          onMouseLeave={e => { e.currentTarget.style.color = "#9ab8c0"; }}
           title="Collapse"
         >
           <ChevronRight className="w-5 h-5" />
@@ -113,55 +106,70 @@ export const QuestionEditorSidebar = ({ questions = [], evaluations = [] }) => {
       {/* Content Area */}
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex flex-col h-full">
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {sidebarMessages.length === 0 ? (
-                <div className="text-center text-gray-500 text-sm py-8">
-                  <p className="mb-2">💬 No messages yet</p>
-                  <p className="text-xs">Ask questions about your survey or request edits</p>
-                </div>
-              ) : (
-                <>
-                  {sidebarMessages.map((msg) => (
-                    <ChatMessage key={msg.id} message={msg} />
-                  ))}
-                  {isLoading && (
-                    <div className="flex gap-3">
-                      <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-teal-100">
-                        <div className="w-3 h-3 bg-teal-600 rounded-full animate-pulse" />
-                      </div>
-                      <div className="text-sm text-gray-500">Thinking...</div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {sidebarMessages.length === 0 ? (
+              <div className="text-center text-sm py-8">
+                <p className="mb-2" style={{ color: "#9ab8c0" }}>💬 No messages yet</p>
+                <p className="text-xs" style={{ color: "#9ab8c0" }}>
+                  Ask questions about your survey or request edits
+                </p>
+              </div>
+            ) : (
+              <>
+                {sidebarMessages.map((msg) => (
+                  <ChatMessage key={msg.id} message={msg} />
+                ))}
+                {isLoading && (
+                  <div className="flex gap-3">
+                    <div
+                      className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: "#e8f6f7" }}
+                    >
+                      <div className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: "#2AABBA" }} />
                     </div>
-                  )}
-                  <div ref={messagesEndRef} />
-                </>
-              )}
-            </div>
-
-            {/* Input */}
-            <div className="border-t border-gray-200 bg-gray-50 p-3 shrink-0">
-              <form onSubmit={handleSendMessage} className="flex gap-2">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask anything..."
-                  disabled={isLoading}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                />
-                <button
-                  type="submit"
-                  disabled={isLoading || !input.trim()}
-                  className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
-            </div>
+                    <div className="text-sm" style={{ color: "#9ab8c0" }}>Thinking...</div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </>
+            )}
           </div>
+
+          {/* Input */}
+          <div className="p-3 shrink-0" style={{ borderTop: "1px solid #d0eaea", backgroundColor: "#f0f8f8" }}>
+            <form onSubmit={handleSendMessage} className="flex gap-2">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask anything..."
+                disabled={isLoading}
+                className="flex-1 px-3 py-2 rounded-lg text-sm outline-none transition-all disabled:cursor-not-allowed"
+                style={{
+                  border: "1px solid #b0d4dc",
+                  backgroundColor: isLoading ? "#f0f8f8" : "#ffffff",
+                  color: "#1B6B8A",
+                }}
+                onFocus={e => { e.currentTarget.style.border = "1px solid #2AABBA"; e.currentTarget.style.boxShadow = "0 0 0 3px #2AABBA22"; }}
+                onBlur={e => { e.currentTarget.style.border = "1px solid #b0d4dc"; e.currentTarget.style.boxShadow = "none"; }}
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !input.trim()}
+                className="px-3 py-2 rounded-lg text-white transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                style={{ backgroundColor: "#1B6B8A" }}
+                onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = "#155a75"; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#1B6B8A"; }}
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
 
       {/* Footer */}
-      <div className="border-t border-gray-200 bg-gray-50 p-3 shrink-0">
+      <div className="p-3 shrink-0" style={{ borderTop: "1px solid #d0eaea", backgroundColor: "#f0f8f8" }}>
         <button
           onClick={() => {
             if (window.confirm('Clear chat history?')) {
@@ -170,7 +178,10 @@ export const QuestionEditorSidebar = ({ questions = [], evaluations = [] }) => {
             }
           }}
           disabled={sidebarMessages.length === 0}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-700 hover:bg-white border border-gray-300 rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ border: "1px solid #b0d4dc", color: "#1B6B8A", backgroundColor: "transparent" }}
+          onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
         >
           <Trash2 className="w-4 h-4" />
           Clear Chat
