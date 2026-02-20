@@ -21,9 +21,9 @@ function Step2VariableModel() {
 
 
   useEffect(() => {
-    if (variableModel?.dependent?.length) return;
+    if (variableModel?.model?.dependent?.length) return;
     handleGenerate();
-  }, []);
+  }, [variableModel.model]);
 
 
   function handleGenerate() {
