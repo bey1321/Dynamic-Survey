@@ -3,6 +3,7 @@ import { useSurvey } from "../state/SurveyContext";
 import { useToast } from "../state/ToastContext";
 import { useChat } from "../state/ChatContext";
 import { SurveyFlowVisualization } from "../components/SurveyFlowVisualization";
+import { QuestionEditorSidebar } from "../components/QuestionEditorSidebar";
 import { List, Eye, Workflow, RotateCcw } from "lucide-react";
 
 const TYPE_LABELS = {
@@ -58,6 +59,7 @@ function Step3Questions() {
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [showQualityReport, setShowQualityReport] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const questions = questionsState.questions;
 
@@ -245,7 +247,9 @@ function commitEdit(index, updatedQuestion) {
   ];
 
   return (
-    <div className="space-y-0">
+    <div className="flex gap-4 h-full">
+      {/* Main content - Questions */}
+      <div className="flex-1 overflow-y-auto space-y-0">
 
       {/* Tab bar */}
       <div className="flex border-b" style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}>
@@ -345,7 +349,7 @@ function commitEdit(index, updatedQuestion) {
             )}
 
             {!loading && questions && questions.length > 0 && (
-              <div className="space-y-3">
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                 {questions.map((q, index) =>
                   editingId === q.id ? (
                     <QuestionEditor
@@ -405,6 +409,14 @@ function commitEdit(index, updatedQuestion) {
         )}
 
       </div>
+      </div>
+
+      {/* Question Editor Sidebar - Only on Step 3 with questions */}
+      {questions && questions.length > 0 && (
+        <div className="w-96 border-l border-gray-200 bg-white" style={{ maxHeight: "calc(100vh - 120px)" }}>
+          <QuestionEditorSidebar questions={questions} evaluations={evaluations} />
+        </div>
+      )}
     </div>
   );
 }
@@ -422,7 +434,7 @@ function QuestionCard({ question: q, isDragging, isDragOver, onEdit, onDelete, o
       onDragOver={onDragOver}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      className="rounded-xl border p-4 group transition-all hover:shadow-md"
+      className="rounded-xl border p-3 group transition-all hover:shadow-md"
       style={{
         borderColor: isDragOver ? "#2AABBA" : "#d0eaea",
         backgroundColor: "#ffffff",
@@ -432,7 +444,7 @@ function QuestionCard({ question: q, isDragging, isDragOver, onEdit, onDelete, o
         cursor: "grab",
       }}
     >
-      <div className="flex items-start justify-between gap-3 mb-2">
+      <div className="flex items-start justify-between gap-3 mb-1">
         <div className="flex items-start gap-2 min-w-0">
           <span
             className="text-base shrink-0 mt-0.5 select-none"
@@ -481,7 +493,7 @@ function QuestionCard({ question: q, isDragging, isDragOver, onEdit, onDelete, o
         <div className="text-[10px] mt-1" style={{ color: "#9ab8c0" }}>Optional</div>
       )}
 
-      <div className="flex gap-2 mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex gap-2 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <button type="button" onClick={onEdit} className="text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors" style={{ backgroundColor: "#e8f6f7", color: "#1B6B8A" }}>
           Edit
         </button>
