@@ -51,7 +51,7 @@ function Step1CreateSurvey() {
     setError("");
     saveSurveyDraft(form);
     setSaved(true);
-    navigate(`${stepBase}/2-variables`);
+    navigate(`${stepBase}/2-variables`, { state: { autoGenerate: true } });
   }
 
   function handleFileChange(e) {

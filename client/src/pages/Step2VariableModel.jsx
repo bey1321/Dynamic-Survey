@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useSurvey } from "../state/SurveyContext";
 import { useStepBase } from "../state/StepNavContext";
 
 function Step2VariableModel() {
   const navigate = useNavigate();
+  const location = useLocation();
   const stepBase = useStepBase();
   const { surveyDraft, variableModel, setVariableModelFromAI, isStepUnlocked } = useSurvey();
   const [localModel, setLocalModel] = useState({
@@ -14,20 +15,48 @@ function Step2VariableModel() {
   });
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const pendingRef = useRef(false);
   const [error, setError] = useState("");
 
   const locked = !isStepUnlocked(2) || !surveyDraft.draftSaved;
 
 
 
+  // Sync localModel from context whenever the model changes (e.g. navigating back)
+  useEffect(() => {
+    if (variableModel?.model) {
+      setLocalModel({
+        dependent: variableModel.model.dependent || [],
+        drivers: variableModel.model.drivers || [],
+        controls: variableModel.model.controls || [],
+      });
+    }
+  }, [variableModel.model]);
+
+  // Explicit trigger: fires when the user clicks "Next" in Step 1.
+  // Uses location.state so it only runs once per navigation (state is cleared
+  // on first use, preventing re-trigger on navigate-back).
+  useEffect(() => {
+    if (!location.state?.autoGenerate) return;
+    if (locked) return;
+    navigate(location.pathname, { replace: true, state: {} });
+    handleGenerate();
+  }, [locked]); // watch locked so it retries if state loads after mount
+
+  // Fallback: auto-generate when there is no model and the step is unlocked
+  // (handles direct navigation / page refresh without going through Step 1).
   useEffect(() => {
     if (variableModel?.model?.dependent?.length) return;
+    if (locked) return;
     handleGenerate();
-  }, [variableModel.model]);
+  }, [variableModel.model, locked]);
 
 
   function handleGenerate() {
-    if (locked || loading) return;
+    if (locked || loading || pendingRef.current) return;
+    pendingRef.current = true;
+    // Clear display immediately — stored/default values only appear after failure
+    setLocalModel({ dependent: [], drivers: [], controls: [] });
     setLoading(true);
     setError("");
 
@@ -64,10 +93,19 @@ function Step2VariableModel() {
       })
       .catch((err) => {
         console.error("Error generating variable model", err);
+        // On failure, restore whatever was stored before generation started
+        if (variableModel?.model) {
+          setLocalModel({
+            dependent: variableModel.model.dependent || [],
+            drivers: variableModel.model.drivers || [],
+            controls: variableModel.model.controls || [],
+          });
+        }
         setError("Failed to generate variable model from AI.");
       })
       .finally(() => {
         setLoading(false);
+        pendingRef.current = false;
       });
   }
 
@@ -220,7 +258,7 @@ function Step2VariableModel() {
         </button>
         <button
           type="button"
-          onClick={() => navigate(`${stepBase}/3-questions`)}
+          onClick={() => navigate(`${stepBase}/3-questions`, { state: { autoGenerate: true } })}
           className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-full text-white shadow-md transition-colors duration-200"
           style={{ backgroundColor: "#1B6B8A" }}
           onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#2AABBA"; }}

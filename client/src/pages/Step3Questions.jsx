@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useSurvey } from "../state/SurveyContext";
 import { useToast } from "../state/ToastContext";
 import { useChat } from "../state/ChatContext";
@@ -53,7 +54,10 @@ function Step3Questions() {
   } = useSurvey();
   const { showToast } = useToast();
   const { updateConversationContext } = useChat();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
+  const pendingRef = useRef(false);
   const [editingId, setEditingId] = useState(null);
   const [activeTab, setActiveTab] = useState("questions");
   const [dragIndex, setDragIndex] = useState(null);
@@ -63,6 +67,17 @@ function Step3Questions() {
 
   const questions = questionsState.questions;
 
+  // Explicit trigger: fires when the user clicks "Next" in Step 2.
+  // Clears the flag on first use so navigate-back doesn't re-trigger.
+  useEffect(() => {
+    if (!location.state?.autoGenerate) return;
+    if (!variableModel.model) return;
+    navigate(location.pathname, { replace: true, state: {} });
+    handleGenerate();
+  }, [variableModel.model]);
+
+  // Fallback: auto-generate when model is ready but no questions yet
+  // (handles direct navigation / page refresh).
   useEffect(() => {
     if (questions && questions.length > 0) return;
     if (!variableModel.model) return;
@@ -75,12 +90,13 @@ function Step3Questions() {
   }, []);
 
   async function handleGenerate() {
-    if (loading) return;
+    if (loading || pendingRef.current) return;
     if (!variableModel.model) {
       showToast("Please generate and approve a variable model first.");
       return;
     }
 
+    pendingRef.current = true;
     setLoading(true);
     setEditingId(null);
     try {
@@ -107,6 +123,7 @@ function Step3Questions() {
       showToast("Generation failed — check server logs.");
     } finally {
       setLoading(false);
+      pendingRef.current = false;
     }
   }
 
