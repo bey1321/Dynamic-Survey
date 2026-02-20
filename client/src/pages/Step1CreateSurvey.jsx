@@ -209,7 +209,7 @@ function Step1CreateSurvey() {
           </p>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
+            {/* <div>
               <label className={labelCls} style={{ color: "#1B6B8A" }}>Confidence</label>
               <select name="confidence" value={form.confidence} onChange={handleChange} className={inputCls}>
                 <option value="90">90%</option>
@@ -225,7 +225,7 @@ function Step1CreateSurvey() {
                 <option value="5">±5%</option>
                 <option value="7">±7%</option>
               </select>
-            </div>
+            </div> */}
 
             <div>
               <label className={labelCls} style={{ color: "#1B6B8A" }}>Tone</label>

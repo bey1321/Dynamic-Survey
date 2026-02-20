@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { GoogleGenAI } from "@google/genai";
 import {
   VARIABLE_MODEL_SYSTEM_PROMPT,
   buildVariableModelUserPrompt,
@@ -28,16 +29,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ── OpenRouter ───────────────────────────────────────────────────────────────
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const GEMMA_MODEL = process.env.GEMMA_MODEL || "mistralai/mistral-7b-instruct:free";
+// ── Gemini ────────────────────────────────────────────────────────────────────
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
-console.log("Using model:", GEMMA_MODEL);
-console.log("OpenRouter key loaded:", OPENROUTER_API_KEY ? `${OPENROUTER_API_KEY.slice(0, 10)}…` : "MISSING");
+console.log("Using model:", GEMINI_MODEL);
+console.log("Gemini key loaded:", GEMINI_API_KEY ? `${GEMINI_API_KEY.slice(0, 10)}…` : "MISSING");
 
-async function callGemma(inputPrompt, systemPrompt, fallbackValue, isRetry = false, label = "unknown") {
-  if (!OPENROUTER_API_KEY) {
-    console.error("❌ OpenRouter API key is missing!");
+async function callGemini(inputPrompt, systemPrompt, fallbackValue, isRetry = false, label = "unknown") {
+  if (!ai) {
+    console.error("❌ Gemini API key is missing!");
     return fallbackValue;
   }
 
@@ -47,38 +49,20 @@ async function callGemma(inputPrompt, systemPrompt, fallbackValue, isRetry = fal
 
   const retryTag = isRetry ? " [RETRY]" : "";
   console.log(`\n📡 [API CALL] ${label}${retryTag}`);
-  console.log(`   Model  : ${GEMMA_MODEL}`);
+  console.log(`   Model  : ${GEMINI_MODEL}`);
   console.log(`   Prompt : ${inputPrompt.slice(0, 120).replace(/\n/g, " ")}…`);
 
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "Dynamic Survey Generator"
-      },
-      body: JSON.stringify({
-        model: GEMMA_MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent }
-        ]
-      })
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: userContent,
+      config: { systemInstruction: systemPrompt }
     });
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      console.error(`   ❌ [${label}] HTTP ${res.status}: ${errorText.slice(0, 200)}`);
-      return fallbackValue;
-    }
-
-    const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content || "";
+    const text = response.text || "";
 
     if (!text) {
-      console.error(`   ❌ [${label}] Empty response from OpenRouter`);
+      console.error(`   ❌ [${label}] Empty response from Gemini`);
       return fallbackValue;
     }
 
@@ -94,26 +78,19 @@ async function callGemma(inputPrompt, systemPrompt, fallbackValue, isRetry = fal
       console.error(`   Raw: ${text.substring(0, 200)}`);
       if (!isRetry) {
         console.log(`   🔁 [${label}] Retrying with explicit JSON instruction...`);
-        return await callGemma(inputPrompt, systemPrompt, fallbackValue, true, label);
+        return await callGemini(inputPrompt, systemPrompt, fallbackValue, true, label);
       }
       return fallbackValue;
     }
   } catch (err) {
-    console.error(`   ❌ [${label}] Fetch error: ${err.message}`);
+    console.error(`   ❌ [${label}] Gemini error: ${err.message}`);
     return fallbackValue;
   }
 }
 
-// // ── Gemini (commented out) ───────────────────────────────────────────────
-// import { GoogleGenAI } from "@google/genai";
-// const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-// const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-pro";
-// const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
-// async function callGemini(...) { ... }
-
-async function callGemmaForVariableModel(input) {
+async function callGeminiForVariableModel(input) {
   const userPrompt = buildVariableModelUserPrompt(input);
-  const parsed = await callGemma(userPrompt, VARIABLE_MODEL_SYSTEM_PROMPT, FALLBACK_VARIABLE_MODEL, false, "Variable Model Generation");
+  const parsed = await callGemini(userPrompt, VARIABLE_MODEL_SYSTEM_PROMPT, FALLBACK_VARIABLE_MODEL, false, "Variable Model Generation");
 
   if (!Array.isArray(parsed.dependent) || !Array.isArray(parsed.drivers) || !Array.isArray(parsed.controls)) {
     return FALLBACK_VARIABLE_MODEL;
@@ -122,9 +99,9 @@ async function callGemmaForVariableModel(input) {
   return parsed;
 }
 
-async function callGemmaForSurveyConfig(text) {
+async function callGeminiForSurveyConfig(text) {
   const userPrompt = buildSurveyConfigUserPrompt(text);
-  const parsed = await callGemma(userPrompt, SURVEY_CONFIG_SYSTEM_PROMPT, HEALTHCARE_EXAMPLE_SURVEY, false, "Survey Config Extraction");
+  const parsed = await callGemini(userPrompt, SURVEY_CONFIG_SYSTEM_PROMPT, HEALTHCARE_EXAMPLE_SURVEY, false, "Survey Config Extraction");
 
   return {
     title: typeof parsed.title === "string" ? parsed.title : "",
@@ -168,7 +145,7 @@ async function addQuestionsToList(questions, surveyDraft, variableModel, count =
 
   try {
     const addPrompt = buildAddQuestionsUserPrompt(surveyDraft, variableModel, questions, count);
-    const result = await callGemma(addPrompt, QUESTION_GEN_SYSTEM_PROMPT, { questions: [] }, false, `Chat — Add ${count} Question(s)`);
+    const result = await callGemini(addPrompt, QUESTION_GEN_SYSTEM_PROMPT, { questions: [] }, false, `Chat — Add ${count} Question(s)`);
 
     if (Array.isArray(result?.questions) && result.questions.length > 0) {
       const validated = result.questions
@@ -179,7 +156,7 @@ async function addQuestionsToList(questions, surveyDraft, variableModel, count =
             VALID_QUESTION_TYPES.has(q.type) &&
             Array.isArray(q.options)
         )
-        .slice(0, count); // never add more than requested
+        .slice(0, count);
 
       if (validated.length > 0) {
         return [...questions, ...validated];
@@ -191,9 +168,9 @@ async function addQuestionsToList(questions, surveyDraft, variableModel, count =
   return questions;
 }
 
-async function callGemmaForQuestions(surveyDraft, variableModel, previousQuestions = null, attemptLabel = "Question Generation") {
+async function callGeminiForQuestions(surveyDraft, variableModel, previousQuestions = null, attemptLabel = "Question Generation") {
   const userPrompt = buildQuestionGenUserPrompt(surveyDraft, variableModel, previousQuestions);
-  const parsed = await callGemma(userPrompt, QUESTION_GEN_SYSTEM_PROMPT, FALLBACK_QUESTIONS, false, attemptLabel);
+  const parsed = await callGemini(userPrompt, QUESTION_GEN_SYSTEM_PROMPT, FALLBACK_QUESTIONS, false, attemptLabel);
 
   if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
     return FALLBACK_QUESTIONS;
@@ -239,7 +216,7 @@ app.post("/api/generate-questions", async (req, res) => {
   try {
     const topic = surveyDraft?.goal || surveyDraft?.title || "general survey";
     console.log(`\n🚀 [PIPELINE START] Topic: "${topic}"`);
-    let currentResult = await callGemmaForQuestions(surveyDraft, variableModel, previousQuestions, "Question Generation [Attempt 1]");
+    let currentResult = await callGeminiForQuestions(surveyDraft, variableModel, previousQuestions, "Question Generation [Attempt 1]");
 
     if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) {
       return res.json(currentResult);
@@ -273,7 +250,7 @@ app.post("/api/generate-questions", async (req, res) => {
       for (let attempt = 1; attempt <= MAX_REGEN_ATTEMPTS; attempt++) {
         attemptsMade = attempt;
         console.log(`\n🔍 [EVALUATION] Attempt ${attempt}/${MAX_REGEN_ATTEMPTS} — evaluating ${currentResult.questions.length} questions`);
-        const evals = await evaluateQuestions(topic, currentResult.questions, callGemma);
+        const evals = await evaluateQuestions(topic, currentResult.questions, callGemini);
         const issueCount = countIssues(evals);
         const regen = needRegeneration(evals);
 
@@ -299,7 +276,7 @@ app.post("/api/generate-questions", async (req, res) => {
 
         console.log(`\n♻️  [REGENERATION] Attempt ${attempt + 1}/${MAX_REGEN_ATTEMPTS} — regenerating with feedback`);
         const feedback = buildRegenerationFeedback(evals, topic);
-        currentResult = await callGemmaForQuestions({ ...surveyDraft, feedback }, variableModel, previousQuestions, `Question Regeneration [Attempt ${attempt + 1}]`);
+        currentResult = await callGeminiForQuestions({ ...surveyDraft, feedback }, variableModel, previousQuestions, `Question Regeneration [Attempt ${attempt + 1}]`);
         regenerated = true;
 
         if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) break;
@@ -322,7 +299,7 @@ app.post("/api/variable-model", async (req, res) => {
   const input = req.body || {};
 
   try {
-    const model = await callGemmaForVariableModel(input);
+    const model = await callGeminiForVariableModel(input);
     res.json({
       dependent: model.dependent,
       drivers: model.drivers,
@@ -338,7 +315,7 @@ app.post("/api/extract-survey-config", async (req, res) => {
   const content = typeof req.body?.content === "string" ? req.body.content : "";
 
   try {
-    const config = await callGemmaForSurveyConfig(content);
+    const config = await callGeminiForSurveyConfig(content);
     res.json(config);
   } catch (err) {
     console.error("Error in /api/extract-survey-config:", err);
@@ -357,7 +334,7 @@ app.post("/api/evaluate-questions", async (req, res) => {
     const evaluations = await evaluateQuestions(
       topic || "general survey",
       questions,
-      callGemma
+      callGemini
     );
     res.json({ evaluations });
   } catch (err) {
@@ -397,7 +374,7 @@ app.post("/api/chat", async (req, res) => {
         actionLabel = `added ${countToAdd}`;
       } else if (hasEditIntent) {
         const feedbackPrompt = buildRegenerationFeedbackPrompt(message, context.evaluations);
-        const improvementResult = await callGemmaForQuestions(
+        const improvementResult = await callGeminiForQuestions(
           { ...context.surveyDraft, feedback: feedbackPrompt },
           context.variableModel,
           context.questions,
@@ -425,7 +402,7 @@ app.post("/api/chat", async (req, res) => {
     // Handle explicit regeneration action
     if (action === "regenerate_questions" && Array.isArray(context.questions) && context.questions.length > 0) {
       const feedbackPrompt = buildRegenerationFeedbackPrompt(message, context.evaluations);
-      const improvementResult = await callGemmaForQuestions(
+      const improvementResult = await callGeminiForQuestions(
         { ...context.surveyDraft, feedback: feedbackPrompt },
         context.variableModel,
         context.questions,
@@ -442,42 +419,22 @@ app.post("/api/chat", async (req, res) => {
       }
     }
 
-    // Standard chat response via OpenRouter
-    const fullConversationHistory = [
-      ...conversationHistory.slice(-10),
-      { role: "user", content: message }
+    // Standard chat response via Gemini
+    const contents = [
+      ...conversationHistory.slice(-10).map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }]
+      })),
+      { role: "user", parts: [{ text: message }] }
     ];
 
-    const messages = [
-      { role: "system", content: systemPrompt },
-      ...fullConversationHistory
-    ];
-
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "Dynamic Survey Generator"
-      },
-      body: JSON.stringify({
-        model: GEMMA_MODEL,
-        messages: messages.map((m) => ({ role: m.role, content: m.content }))
-      })
+    const chatResponse = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents,
+      config: { systemInstruction: systemPrompt }
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ OpenRouter API error:", response.status, errorText);
-      return res.json({
-        message: "I apologize, but I couldn't process your request at this moment. Please try again.",
-        action: "chat"
-      });
-    }
-
-    const data = await response.json();
-    const chatMessage = data.choices?.[0]?.message?.content || "I'm unable to respond right now. Please try again.";
+    const chatMessage = chatResponse.text || "I'm unable to respond right now. Please try again.";
 
     res.json({ message: chatMessage, action: "chat" });
 
