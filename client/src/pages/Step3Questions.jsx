@@ -67,7 +67,7 @@ function Step3Questions() {
     if (questions && questions.length > 0) return;
     if (!variableModel.model) return;
     handleGenerate();
-  }, []);
+  }, [variableModel.model]);
 
   useEffect(() => {
     // Update chat context for step 3

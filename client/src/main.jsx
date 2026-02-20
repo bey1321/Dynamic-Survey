@@ -8,16 +8,14 @@ import { ToastProvider } from "./state/ToastContext";
 import { ChatProvider } from "./state/ChatContext";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <ToastProvider>
-        <ChatProvider>
-          <SurveyProvider>
-            <App />
-          </SurveyProvider>
-        </ChatProvider>
-      </ToastProvider>
-    </BrowserRouter>
-  </React.StrictMode>
+  <BrowserRouter>
+    <ToastProvider>
+      <ChatProvider>
+        <SurveyProvider>
+          <App />
+        </SurveyProvider>
+      </ChatProvider>
+    </ToastProvider>
+  </BrowserRouter>
 );
 
