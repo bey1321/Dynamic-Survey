@@ -4,8 +4,7 @@ import { useSurvey } from "../state/SurveyContext";
 import { useToast } from "../state/ToastContext";
 import { useChat } from "../state/ChatContext";
 import { SurveyFlowVisualization } from "../components/SurveyFlowVisualization";
-import { QuestionEditorSidebar } from "../components/QuestionEditorSidebar";
-import { List, Eye, Workflow, RotateCcw, ChevronLeft } from "lucide-react";
+import { List, Eye, Workflow, RotateCcw, Send, Loader, MessageSquare, X, Sparkles } from "lucide-react";
 
 const TYPE_LABELS = {
   likert: "Likert",
@@ -57,13 +56,14 @@ function Step3Questions() {
   const navigate = useNavigate();
   const location = useLocation();
   const [loading, setLoading] = useState(false);
+  const [narrationStages, setNarrationStages] = useState([]);
+  const [showModifyModal, setShowModifyModal] = useState(false);
   const pendingRef = useRef(false);
   const [editingId, setEditingId] = useState(null);
   const [activeTab, setActiveTab] = useState("questions");
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [showQualityReport, setShowQualityReport] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const questions = questionsState.questions;
 
@@ -89,6 +89,55 @@ function Step3Questions() {
     updateConversationContext({ currentStep: 3 });
   }, []);
 
+  /**
+   * Shared SSE consumer for /api/generate-questions.
+   * Appends stage events to narrationStages in real-time,
+   * then resolves with the final payload on a "done" event.
+   */
+  async function runGenerate(body) {
+    const res = await fetch("http://localhost:4000/api/generate-questions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalData = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop(); // keep any incomplete trailing line
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (!raw) continue;
+
+        let event;
+        try { event = JSON.parse(raw); } catch { continue; }
+
+        if (event.type === "stage") {
+          setNarrationStages((prev) => [
+            ...prev,
+            { stage: event.stage, message: event.message },
+          ]);
+        } else if (event.type === "done") {
+          finalData = event;
+        } else if (event.type === "error") {
+          throw new Error(event.message || "Generation failed");
+        }
+      }
+    }
+
+    return finalData;
+  }
+
   async function handleGenerate() {
     if (loading || pendingRef.current) return;
     if (!variableModel.model) {
@@ -98,22 +147,15 @@ function Step3Questions() {
 
     pendingRef.current = true;
     setLoading(true);
+    setNarrationStages([]);
     setEditingId(null);
     try {
-      const res = await fetch("http://localhost:4000/api/generate-questions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          surveyDraft,
-          variableModel: variableModel.model
-        })
-      });
-      const data = await res.json();
+      const data = await runGenerate({ surveyDraft, variableModel: variableModel.model });
 
-      if (Array.isArray(data.questions) && data.questions.length > 0) {
+      if (data && Array.isArray(data.questions) && data.questions.length > 0) {
         setQuestionsFromAI(data.questions);
         if (data.evaluations) setEvaluations(data.evaluations);
-        console.log(data.questions)
+        console.log(data.questions);
         showToast("Questions generated successfully.");
       } else {
         showToast("No questions returned. Using fallback.");
@@ -123,6 +165,7 @@ function Step3Questions() {
       showToast("Generation failed — check server logs.");
     } finally {
       setLoading(false);
+      setNarrationStages([]);
       pendingRef.current = false;
     }
   }
@@ -135,19 +178,15 @@ function Step3Questions() {
     }
 
     setLoading(true);
+    setNarrationStages([]);
     try {
-      const res = await fetch("http://localhost:4000/api/generate-questions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          surveyDraft: { ...surveyDraft, feedback: "Regenerate with completely different questions" },
-          variableModel: variableModel.model,
-          previousQuestions: questions
-        })
+      const data = await runGenerate({
+        surveyDraft: { ...surveyDraft, feedback: "Regenerate with completely different questions" },
+        variableModel: variableModel.model,
+        previousQuestions: questions,
       });
-      const data = await res.json();
 
-      if (Array.isArray(data.questions) && data.questions.length > 0) {
+      if (data && Array.isArray(data.questions) && data.questions.length > 0) {
         setQuestionsFromAI(data.questions);
         if (data.evaluations) setEvaluations(data.evaluations);
         showToast("Questions regenerated successfully.");
@@ -159,6 +198,7 @@ function Step3Questions() {
       showToast("Regeneration failed — check server logs.");
     } finally {
       setLoading(false);
+      setNarrationStages([]);
     }
   }
 
@@ -337,14 +377,16 @@ function commitEdit(index, updatedQuestion) {
 
               <button
                 type="button"
-                onClick={handleApprove}
-                disabled={!questions || questions.length === 0}
-                className="ml-auto text-xs font-bold px-4 py-2 rounded-full text-white disabled:opacity-40"
-                style={{ backgroundColor: "#5BBF8E" }}
+                onClick={() => setShowModifyModal(true)}
+                disabled={!questions || questions.length === 0 || loading}
+                className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40 flex items-center gap-1.5"
+                style={{ borderColor: "#5BBF8E", color: "#1B6B8A", backgroundColor: "#f0faf5" }}
+                title="Open AI chat to modify questions"
               >
-                Approve Draft
+                <Sparkles size={13} />
+                Modify
               </button>
-              
+
               <button
                 type="button"
                 onClick={handleAddQuestion}
@@ -359,9 +401,44 @@ function commitEdit(index, updatedQuestion) {
             </div>
 
             {loading && (
-              <div className="flex items-center gap-2 py-8 justify-center" style={{ color: "#9ab8c0" }}>
-                <span className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full inline-block" />
-                <span className="text-sm">Generating questions…</span>
+              <div>
+                {/* Workflow narration — appears above the spinner */}
+                {narrationStages.length > 0 && (
+                  <div
+                    className="rounded-lg p-4 mb-4 space-y-2"
+                    style={{ backgroundColor: "#f0f9fa", border: "1px solid #d0eaea" }}
+                  >
+                    {narrationStages.map((s, i) => {
+                      const isLatest = i === narrationStages.length - 1;
+                      return (
+                        <div key={i} className="flex items-start gap-2 text-xs font-mono">
+                          <span style={{ minWidth: "14px", marginTop: "1px" }}>
+                            {isLatest ? (
+                              <span
+                                className="inline-block w-3 h-3 rounded-full border border-t-transparent animate-spin"
+                                style={{ borderColor: "#1B6B8A" }}
+                              />
+                            ) : (
+                              <span style={{ color: "#5BBF8E" }}>✓</span>
+                            )}
+                          </span>
+                          <span>
+                            <span className="font-semibold" style={{ color: "#1B6B8A" }}>
+                              [Stage: {s.stage}]
+                            </span>{" "}
+                            <span style={{ color: "#536b6e" }}>{s.message}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Existing spinner — unchanged */}
+                <div className="flex items-center gap-2 py-8 justify-center" style={{ color: "#9ab8c0" }}>
+                  <span className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full inline-block" />
+                  <span className="text-sm">Generating questions…</span>
+                </div>
               </div>
             )}
 
@@ -428,26 +505,17 @@ function commitEdit(index, updatedQuestion) {
       </div>
       </div>
 
-      {/* Question Editor Sidebar - Only on Step 3 with questions */}
-      {questions && questions.length > 0 && !sidebarCollapsed && (
-        <div className="w-96 shrink-0 border-l border-gray-200 bg-white" style={{ maxHeight: "calc(100vh - 120px)" }}>
-          <QuestionEditorSidebar
-            questions={questions}
-            evaluations={evaluations}
-            onCollapse={() => setSidebarCollapsed(true)}
-          />
-        </div>
-      )}
-
-      {/* Expand button shown when sidebar is collapsed */}
-      {questions && questions.length > 0 && sidebarCollapsed && (
-        <button
-          onClick={() => setSidebarCollapsed(false)}
-          className="fixed right-6 top-1/2 -translate-y-1/2 w-10 h-10 bg-gradient-to-br from-teal-500 to-blue-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-110 transition-all z-30 flex items-center justify-center"
-          title="Expand Question Editor"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
+      {/* Modify modal */}
+      {showModifyModal && (
+        <ModifyModal
+          questions={questions}
+          onApply={(newQs) => {
+            setQuestionsFromAI(newQs);
+            if (newQs.evaluations) setEvaluations(newQs.evaluations);
+            showToast("Survey updated from chat.");
+          }}
+          onClose={() => setShowModifyModal(false)}
+        />
       )}
     </div>
   );
@@ -1076,6 +1144,449 @@ function PreviewCard({ question: q, answer, onAnswer, onToggleMulti }) {
           ↳ Shown based on {q.branchFrom.toUpperCase()} answer
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modify modal — chat + questions preview side-by-side               */
+/* ------------------------------------------------------------------ */
+
+function ModifyModal({ questions, onApply, onClose }) {
+  const { messages, isLoading, error, sendChatMessage, conversationContext } = useChat();
+  const { surveyDraft, variableModel, evaluations } = useSurvey();
+
+  const [input, setInput] = useState("");
+  const [draftQuestions, setDraftQuestions] = useState(null);
+  const [activeTab, setActiveTab] = useState("changes");
+  const messagesEndRef = useRef(null);
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const displayQuestions = draftQuestions || questions;
+  const hasChanges = !!draftQuestions;
+
+  // For change-badge comparison
+  const originalIds = new Set((questions || []).map((q) => q.id));
+  const originalTextMap = Object.fromEntries((questions || []).map((q) => [q.id, q.text]));
+
+  async function handleSend(e) {
+    e?.preventDefault();
+    if (!input.trim() || isLoading) return;
+    const userInput = input.trim();
+    setInput("");
+
+    const response = await sendChatMessage(userInput, {
+      currentStep: conversationContext.currentStep,
+      surveyDraft,
+      variableModel: variableModel?.model,
+      questions: draftQuestions || questions,
+      evaluations,
+    });
+
+    if (response?.regeneratedQuestions) {
+      setDraftQuestions(response.regeneratedQuestions);
+    }
+  }
+
+  function handleApply() {
+    if (draftQuestions) onApply(draftQuestions);
+    onClose();
+  }
+
+  const QUICK_PROMPTS = [
+    "Make the questions simpler",
+    "Add a demographics question",
+    "Make questions more neutral",
+    "Remove any duplicate questions",
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ width: "90vw", height: "86vh", maxWidth: "1200px" }}
+      >
+        {/* ── Top bar ── */}
+        <div
+          className="flex items-center justify-between px-6 py-3 border-b shrink-0"
+          style={{ borderColor: "#d0eaea", backgroundColor: "#f0f9fa" }}
+        >
+          <div className="flex items-center gap-2">
+            <div
+              className="w-6 h-6 rounded-full flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg, #5BBF8E, #1B6B8A)" }}
+            >
+              <Sparkles size={12} color="white" />
+            </div>
+            <span className="text-sm font-bold" style={{ color: "#1B6B8A" }}>Survey AI</span>
+            <span
+              className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+              style={{ backgroundColor: "#d0eaea", color: "#1B6B8A" }}
+            >
+              Beta
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-full flex items-center justify-center transition-colors hover:bg-gray-100"
+            style={{ color: "#536b6e" }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* ── Body ── */}
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* ── Left: Chat panel ── */}
+          <div
+            className="flex flex-col border-r shrink-0"
+            style={{ width: "360px", borderColor: "#d0eaea" }}
+          >
+            {/* Revert banner — only when changes are pending */}
+            {hasChanges && (
+              <div
+                className="flex items-center justify-between px-4 py-2 border-b shrink-0"
+                style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}
+              >
+                <button
+                  onClick={() => setDraftQuestions(null)}
+                  className="flex items-center gap-1.5 text-xs font-semibold transition-colors"
+                  style={{ color: "#536b6e" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#1B6B8A"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "#536b6e"; }}
+                >
+                  <RotateCcw size={11} />
+                  Back to this version
+                </button>
+                <span
+                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: "#e8faf2", color: "#5BBF8E" }}
+                >
+                  Changes pending
+                </span>
+              </div>
+            )}
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {messages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center px-4">
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center mb-3"
+                    style={{ backgroundColor: "#e8f6f7" }}
+                  >
+                    <MessageSquare size={20} style={{ color: "#1B6B8A" }} />
+                  </div>
+                  <p className="text-sm font-semibold mb-1" style={{ color: "#1B6B8A" }}>
+                    What would you like to change?
+                  </p>
+                  <p className="text-xs" style={{ color: "#9ab8c0" }}>
+                    Ask me to add, remove, or improve questions. Changes preview on the right.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {messages.map((msg) => (
+                    <ModalChatMessage key={msg.id} message={msg} />
+                  ))}
+                  {isLoading && (
+                    <div className="flex items-start gap-2">
+                      <div
+                        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+                        style={{ background: "linear-gradient(135deg, #5BBF8E, #1B6B8A)" }}
+                      >
+                        <Sparkles size={12} color="white" />
+                      </div>
+                      <div
+                        className="px-3 py-2 rounded-xl rounded-tl-none text-xs flex items-center gap-2"
+                        style={{ backgroundColor: "#f0f9fa", color: "#536b6e" }}
+                      >
+                        <Loader size={12} className="animate-spin" />
+                        Thinking…
+                      </div>
+                    </div>
+                  )}
+                  {error && (
+                    <div
+                      className="text-xs px-3 py-2 rounded-lg"
+                      style={{ backgroundColor: "#fef2f2", color: "#dc2626" }}
+                    >
+                      {error}
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </>
+              )}
+            </div>
+
+            {/* Quick prompts — only when chat is empty */}
+            {messages.length === 0 && (
+              <div
+                className="px-4 py-3 border-t space-y-1.5 shrink-0"
+                style={{ borderColor: "#d0eaea" }}
+              >
+                {QUICK_PROMPTS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setInput(p)}
+                    className="flex w-full items-center text-left px-3 py-2 rounded-lg text-xs transition-colors"
+                    style={{ color: "#1B6B8A", backgroundColor: "#f0f9fa" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#d0eaea"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#f0f9fa"; }}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Input */}
+            <div
+              className="border-t px-4 py-3 shrink-0"
+              style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}
+            >
+              <form onSubmit={handleSend} className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Ask anything…"
+                  disabled={isLoading}
+                  className="flex-1 px-3 py-2 rounded-xl border text-sm outline-none transition-all disabled:opacity-50"
+                  style={{ borderColor: "#b0d4dc", color: "#1B6B8A", backgroundColor: "#ffffff" }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = "#2AABBA"; e.currentTarget.style.boxShadow = "0 0 0 2px #2AABBA20"; }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = "#b0d4dc"; e.currentTarget.style.boxShadow = "none"; }}
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  disabled={isLoading || !input.trim()}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-all disabled:opacity-40"
+                  style={{ backgroundColor: "#1B6B8A", color: "white" }}
+                >
+                  <Send size={14} />
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {/* ── Right: Questions preview ── */}
+          <div className="flex-1 flex flex-col overflow-hidden" style={{ backgroundColor: "#f8fdfd" }}>
+
+            {/* Tabs + question count */}
+            <div
+              className="flex items-center justify-between px-6 py-3 border-b shrink-0 bg-white"
+              style={{ borderColor: "#d0eaea" }}
+            >
+              <div className="flex gap-1">
+                {[
+                  { id: "changes", label: "Suggested changes" },
+                  { id: "preview", label: "Preview" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
+                    style={
+                      activeTab === tab.id
+                        ? { backgroundColor: "#d0eaea", color: "#1B6B8A" }
+                        : { color: "#9ab8c0", backgroundColor: "transparent" }
+                    }
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <span
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full"
+                style={{ backgroundColor: "#d0eaea", color: "#1B6B8A" }}
+              >
+                {displayQuestions.length} question{displayQuestions.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+              {activeTab === "changes" && displayQuestions.map((q, i) => {
+                const isNew = hasChanges && !originalIds.has(q.id);
+                const isModified = hasChanges && !isNew && originalTextMap[q.id] !== undefined && originalTextMap[q.id] !== q.text;
+                return (
+                  <ModalQuestionCard
+                    key={q.id}
+                    question={q}
+                    number={i + 1}
+                    isNew={isNew}
+                    isModified={isModified}
+                  />
+                );
+              })}
+              {activeTab === "preview" && (
+                <SurveyPreview questions={displayQuestions} title={surveyDraft?.title} inline />
+              )}
+            </div>
+
+            {/* Footer: Cancel + Apply */}
+            <div
+              className="border-t px-6 py-4 flex items-center justify-end gap-3 bg-white shrink-0"
+              style={{ borderColor: "#d0eaea" }}
+            >
+              <button
+                onClick={onClose}
+                className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors"
+                style={{ borderColor: "#b0d4dc", color: "#536b6e" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApply}
+                disabled={!hasChanges}
+                className="text-xs font-bold px-6 py-2 rounded-full text-white transition-all disabled:opacity-40"
+                style={{ backgroundColor: "#1B6B8A" }}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Chat message bubble inside the modal                               */
+/* ------------------------------------------------------------------ */
+
+function ModalChatMessage({ message }) {
+  const isUser = message.role === "user";
+  const hasUpdated = message.metadata?.action === "questions_regenerated";
+
+  return (
+    <div className={`flex items-start gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
+      {!isUser && (
+        <div
+          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+          style={{ background: "linear-gradient(135deg, #5BBF8E, #1B6B8A)" }}
+        >
+          <Sparkles size={12} color="white" />
+        </div>
+      )}
+      <div
+        className={`max-w-[78%] px-3 py-2.5 rounded-xl text-xs leading-relaxed ${
+          isUser ? "rounded-tr-none" : "rounded-tl-none"
+        }`}
+        style={
+          isUser
+            ? { backgroundColor: "#1B6B8A", color: "white" }
+            : { backgroundColor: "#f0f9fa", color: "#1B6B8A" }
+        }
+      >
+        {message.content}
+        {hasUpdated && (
+          <div
+            className="flex items-center gap-1 mt-1.5 text-[10px] font-semibold"
+            style={{ color: isUser ? "rgba(255,255,255,0.7)" : "#5BBF8E" }}
+          >
+            <span>✓</span>
+            <span>Questions updated — preview on the right</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Question card inside the modal preview panel                       */
+/* ------------------------------------------------------------------ */
+
+function ModalQuestionCard({ question: q, number, isNew, isModified }) {
+  const badge = isNew
+    ? { label: "New", bg: "#e8faf2", text: "#5BBF8E" }
+    : isModified
+    ? { label: "Modified", bg: "#fef9ee", text: "#f59e0b" }
+    : null;
+
+  return (
+    <div
+      className="rounded-xl border bg-white p-4 transition-all"
+      style={{
+        borderColor: isNew ? "#5BBF8E" : isModified ? "#f59e0b" : "#d0eaea",
+        borderWidth: isNew || isModified ? "1.5px" : "1px",
+      }}
+    >
+      <div className="flex items-start gap-3">
+        {/* Number badge */}
+        <span
+          className="w-6 h-6 rounded-md flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5"
+          style={{ backgroundColor: "#e8f6f7", color: "#1B6B8A" }}
+        >
+          {number}
+        </span>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <p className="text-sm font-medium leading-snug" style={{ color: "#1B6B8A" }}>
+              {q.text}
+            </p>
+            {badge && (
+              <span
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                style={{ backgroundColor: badge.bg, color: badge.text }}
+              >
+                {badge.label}
+              </span>
+            )}
+          </div>
+
+          {/* Options */}
+          {q.options && q.options.length > 0 && (
+            <div className="space-y-1">
+              {q.options.slice(0, 5).map((opt, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs" style={{ color: "#536b6e" }}>
+                  <span
+                    className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold shrink-0"
+                    style={{ backgroundColor: "#f0f8f8", color: "#2AABBA" }}
+                  >
+                    {String.fromCharCode(65 + i)}
+                  </span>
+                  {opt}
+                </div>
+              ))}
+              {q.options.length > 5 && (
+                <p className="text-[10px] pl-7" style={{ color: "#9ab8c0" }}>
+                  +{q.options.length - 5} more options
+                </p>
+              )}
+            </div>
+          )}
+
+          {q.type === "open_ended" && (
+            <div
+              className="mt-1 h-7 rounded-lg border flex items-center px-2 text-[10px]"
+              style={{ borderColor: "#d0eaea", color: "#9ab8c0", borderStyle: "dashed" }}
+            >
+              Open text response…
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

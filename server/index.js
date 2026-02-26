@@ -213,13 +213,42 @@ const MAX_REGEN_ATTEMPTS = 2;
 app.post("/api/generate-questions", async (req, res) => {
   const { surveyDraft, variableModel, previousQuestions } = req.body || {};
 
+  // ── SSE setup ─────────────────────────────────────────────────────────────
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  /** Emit a workflow stage narration event. */
+  function emitStage(stage, message) {
+    res.write(`data: ${JSON.stringify({ type: "stage", stage, message })}\n\n`);
+  }
+
+  /** Emit the final payload and close the stream. */
+  function emitDone(payload) {
+    res.write(`data: ${JSON.stringify({ type: "done", ...payload })}\n\n`);
+    res.end();
+  }
+
+  /** Emit an error event and close the stream. */
+  function emitError(message) {
+    res.write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
+    res.end();
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   try {
+    // Stage 1 — Input Analysis
+    emitStage("Input Analysis", "Parsing survey topic, goals, and variable model…");
     const topic = surveyDraft?.goal || surveyDraft?.title || "general survey";
     console.log(`\n🚀 [PIPELINE START] Topic: "${topic}"`);
+
+    // Stage 2 — Draft Generation
+    emitStage("Draft Generation", "Generating initial question set from survey specification…");
     let currentResult = await callGeminiForQuestions(surveyDraft, variableModel, previousQuestions, "Question Generation [Attempt 1]");
 
     if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) {
-      return res.json(currentResult);
+      return emitDone(currentResult);
     }
 
     let bestResult = currentResult;
@@ -249,7 +278,14 @@ app.post("/api/generate-questions", async (req, res) => {
     try {
       for (let attempt = 1; attempt <= MAX_REGEN_ATTEMPTS; attempt++) {
         attemptsMade = attempt;
-        console.log(`\n🔍 [EVALUATION] Attempt ${attempt}/${MAX_REGEN_ATTEMPTS} — evaluating ${currentResult.questions.length} questions`);
+
+        // Stage 3 — Internal Review
+        const qCount = currentResult.questions.length;
+        emitStage(
+          "Internal Review",
+          `Evaluating ${qCount} question${qCount !== 1 ? "s" : ""} for clarity, neutrality, relevance, and bias…`
+        );
+        console.log(`\n🔍 [EVALUATION] Attempt ${attempt}/${MAX_REGEN_ATTEMPTS} — evaluating ${qCount} questions`);
         const evals = await evaluateQuestions(topic, currentResult.questions, callGemini);
         const issueCount = countIssues(evals);
         const regen = needRegeneration(evals);
@@ -274,6 +310,11 @@ app.post("/api/generate-questions", async (req, res) => {
           break;
         }
 
+        // Stage 4 — Refinement (only emitted when regeneration is needed)
+        emitStage(
+          "Refinement",
+          `${issueCount} issue${issueCount !== 1 ? "s" : ""} detected — regenerating with targeted feedback…`
+        );
         console.log(`\n♻️  [REGENERATION] Attempt ${attempt + 1}/${MAX_REGEN_ATTEMPTS} — regenerating with feedback`);
         const feedback = buildRegenerationFeedback(evals, topic);
         currentResult = await callGeminiForQuestions({ ...surveyDraft, feedback }, variableModel, previousQuestions, `Question Regeneration [Attempt ${attempt + 1}]`);
@@ -282,16 +323,19 @@ app.post("/api/generate-questions", async (req, res) => {
         if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) break;
       }
 
-      return res.json({ ...bestResult, evaluations: bestEvals, regenerated, attemptsMade });
+      // Stage 5 — Final Approval
+      emitStage("Final Approval", "Quality checks passed — preparing final question set…");
+      return emitDone({ ...bestResult, evaluations: bestEvals, regenerated, attemptsMade });
 
     } catch (evalErr) {
       console.error("Evaluation loop failed, returning questions without eval:", evalErr);
-      return res.json(currentResult);
+      emitStage("Final Approval", "Evaluation skipped — returning generated questions…");
+      return emitDone(currentResult);
     }
 
   } catch (err) {
     console.error("Error in /api/generate-questions:", err);
-    res.status(500).json(FALLBACK_QUESTIONS);
+    return emitError("Question generation failed. Check server logs.");
   }
 });
 
@@ -343,6 +387,20 @@ app.post("/api/evaluate-questions", async (req, res) => {
   }
 });
 
+/** Parse a count from a message, accepting both digit ("2") and word ("two") numbers. */
+function parseCount(message, fallback = 1) {
+  const WORD_NUMBERS = {
+    one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  };
+  const digitMatch = message.match(/\b(\d+)\b/);
+  if (digitMatch) return parseInt(digitMatch[1]);
+  for (const [word, num] of Object.entries(WORD_NUMBERS)) {
+    if (new RegExp(`\\b${word}\\b`).test(message)) return num;
+  }
+  return fallback;
+}
+
 app.post("/api/chat", async (req, res) => {
   const { message, context = {}, conversationHistory = [], action = "chat" } = req.body || {};
 
@@ -353,7 +411,7 @@ app.post("/api/chat", async (req, res) => {
   try {
     const systemPrompt = buildChatSystemPrompt(context);
     const lowerMessage = message.toLowerCase();
-    const hasAddIntent = /add.*question|add\s+\d+|create.*question|new question|more question|\d+\s+more\s+question|additional.*question/i.test(lowerMessage);
+    const hasAddIntent = /add.*question|add\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)|create.*question|new question|more question|(\d+|one|two|three|four|five)\s+more\s+question|additional.*question/i.test(lowerMessage);
     const hasRemoveIntent = /remove|delete|less question|fewer question|remove.*question|delete.*question/i.test(lowerMessage);
     const hasEditIntent = /simpler|shorter|longer|clearer|different|change|reword|modify|edit|regenerate|improve/i.test(lowerMessage);
 
@@ -363,15 +421,13 @@ app.post("/api/chat", async (req, res) => {
       let actionLabel = "modified";
 
       if (hasRemoveIntent) {
-        const numberMatch = lowerMessage.match(/(\d+)/);
-        const countToRemove = numberMatch ? parseInt(numberMatch[1]) : 1;
+        const countToRemove = parseCount(lowerMessage);
         modifiedQuestions = removeQuestionsFromList(context.questions, lowerMessage, countToRemove);
-        actionLabel = `removed ${countToRemove}`;
+        actionLabel = `removed ${countToRemove} question${countToRemove !== 1 ? "s" : ""}`;
       } else if (hasAddIntent) {
-        const numberMatch = lowerMessage.match(/(\d+)/);
-        const countToAdd = numberMatch ? parseInt(numberMatch[1]) : 1;
+        const countToAdd = parseCount(lowerMessage);
         modifiedQuestions = await addQuestionsToList(context.questions, context.surveyDraft, context.variableModel, countToAdd);
-        actionLabel = `added ${countToAdd}`;
+        actionLabel = `added ${countToAdd} question${countToAdd !== 1 ? "s" : ""}`;
       } else if (hasEditIntent) {
         const feedbackPrompt = buildRegenerationFeedbackPrompt(message, context.evaluations);
         const improvementResult = await callGeminiForQuestions(
@@ -392,7 +448,7 @@ app.post("/api/chat", async (req, res) => {
       }));
 
       return res.json({
-        message: `I've ${actionLabel} the questions. Here are the updated questions.`,
+        message: `I've ${actionLabel}. Here are the updated questions.`,
         action: "questions_regenerated",
         regeneratedQuestions: renumberedQuestions,
         regenerationFeedback: message,
