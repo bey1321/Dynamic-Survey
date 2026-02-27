@@ -1,3 +1,4 @@
+
 import { pipeline } from "@xenova/transformers";
 import { QUALITY_THRESHOLDS } from "../shared/constants.js";
 
@@ -197,7 +198,7 @@ Score each question on:
 Return a JSON array with ${questions.length} objects, one per question, in the same order.`;
 
   try {
-    const result = await geminiCallFn(userPrompt, systemPrompt, null);
+    const result = await geminiCallFn(userPrompt, systemPrompt, null, false, "LLM Quality Scoring (Batch)");
 
     if (Array.isArray(result) && result.length === questions.length) {
       return result.map(r => ({

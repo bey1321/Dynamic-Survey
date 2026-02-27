@@ -1,14 +1,15 @@
-import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useSurvey } from "../state/SurveyContext";
 import { StepNavProvider } from "../state/StepNavContext";
 import HorizontalStepper from "./HorizontalStepper";
 import ToastContainer from "./ToastContainer";
+import { ChatSidebar } from "./ChatSidebar";
 import rakscLogo from "../assets/raksc-logo.png";
 
 function LayoutClean({ children }) {
   const navigate = useNavigate();
-  const { surveyDraft, globalStatus, resetDemoData } = useSurvey();
+  const { surveyDraft, globalStatus } = useSurvey();
+
   const title =
     surveyDraft.title && surveyDraft.title.trim().length > 0
       ? surveyDraft.title
@@ -21,12 +22,10 @@ function LayoutClean({ children }) {
         className="flex items-center justify-between px-8 py-3 border-b"
         style={{ backgroundColor: "#ffffff", borderColor: "#d0eaea" }}
       >
-        {/* Logo */}
         <button onClick={() => navigate("/")} className="focus:outline-none">
           <img src={rakscLogo} alt="RAK Statistics Logo" className="h-10 w-auto object-contain" />
         </button>
 
-        {/* Survey title + status */}
         <div className="flex flex-col items-center gap-0.5">
           <span className="text-sm font-semibold" style={{ color: "#1B6B8A" }}>
             {title}
@@ -39,17 +38,8 @@ function LayoutClean({ children }) {
           </span>
         </div>
 
-        {/* Reset */}
-        <button
-          type="button"
-          onClick={resetDemoData}
-          className="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors duration-200"
-          style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
-          onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#d0eaea"; }}
-          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-        >
-          Reset Data
-        </button>
+        {/* placeholder to keep title centred */}
+        <div className="h-10 w-24" />
       </header>
 
       {/* Horizontal step progress */}
@@ -74,6 +64,7 @@ function LayoutClean({ children }) {
       />
 
       <ToastContainer />
+      <ChatSidebar />
     </div>
   );
 }

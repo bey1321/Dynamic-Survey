@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import { GoogleGenAI } from "@google/genai";
 import {
   VARIABLE_MODEL_SYSTEM_PROMPT,
@@ -8,7 +10,10 @@ import {
   SURVEY_CONFIG_SYSTEM_PROMPT,
   buildSurveyConfigUserPrompt,
   QUESTION_GEN_SYSTEM_PROMPT,
-  buildQuestionGenUserPrompt
+  buildQuestionGenUserPrompt,
+  buildAddQuestionsUserPrompt,
+  buildChatSystemPrompt,
+  buildRegenerationFeedbackPrompt
 } from "../shared/promptTemplates.js";
 import { FALLBACK_VARIABLE_MODEL, HEALTHCARE_EXAMPLE_SURVEY, FALLBACK_QUESTIONS } from "../shared/demoData.js";
 import {
@@ -17,51 +22,75 @@ import {
   buildRegenerationFeedback
 } from "./evaluator.js";
 
-dotenv.config();
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, ".env") });
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ── Gemini ────────────────────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const rawModel = process.env.GEMINI_MODEL;
-const GEMINI_MODEL = rawModel
-  ? String(rawModel).replace(/^\s+|\s+$/g, "").replace(/^['"]+|['"]+$/g, "").replace(/,+$/g, "")
-  : "gemini-1.5-pro";
-
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
-console.log("Using GEMINI_MODEL:", GEMINI_MODEL);
+console.log("Using model:", GEMINI_MODEL);
+console.log("Gemini key loaded:", GEMINI_API_KEY ? `${GEMINI_API_KEY.slice(0, 10)}…` : "MISSING");
 
-async function callGemini(inputPrompt, systemPrompt, fallbackValue, isRetry = false) {
+async function callGemini(inputPrompt, systemPrompt, fallbackValue, isRetry = false, label = "unknown") {
   if (!ai) {
+    console.error("❌ Gemini API key is missing!");
     return fallbackValue;
   }
 
-  const prompt = isRetry
-    ? `${systemPrompt}\n\n${inputPrompt}\n\nReturn ONLY valid JSON.`
-    : `${systemPrompt}\n\n${inputPrompt}`;
+  const userContent = isRetry
+    ? `${inputPrompt}\n\nReturn ONLY valid JSON.`
+    : inputPrompt;
 
-  const response = await ai.models.generateContent({
-    model: GEMINI_MODEL,
-    contents: prompt
-  });
-
-  const text = response.text || "";
+  const retryTag = isRetry ? " [RETRY]" : "";
+  console.log(`\n📡 [API CALL] ${label}${retryTag}`);
+  console.log(`   Model  : ${GEMINI_MODEL}`);
+  console.log(`   Prompt : ${inputPrompt.slice(0, 120).replace(/\n/g, " ")}…`);
 
   try {
-    return JSON.parse(text);
-  } catch (err) {
-    if (!isRetry) {
-      return await callGemini(inputPrompt, systemPrompt, fallbackValue, true);
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: userContent,
+      config: { systemInstruction: systemPrompt }
+    });
+
+    const text = response.text || "";
+
+    if (!text) {
+      console.error(`   ❌ [${label}] Empty response from Gemini`);
+      return fallbackValue;
     }
+
+    // Strip markdown code fences the model may wrap around JSON
+    const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+    try {
+      const parsed = JSON.parse(cleaned);
+      console.log(`   ✅ [${label}] Success — JSON parsed`);
+      return parsed;
+    } catch (err) {
+      console.error(`   ❌ [${label}] JSON parse error: ${err.message}`);
+      console.error(`   Raw: ${text.substring(0, 200)}`);
+      if (!isRetry) {
+        console.log(`   🔁 [${label}] Retrying with explicit JSON instruction...`);
+        return await callGemini(inputPrompt, systemPrompt, fallbackValue, true, label);
+      }
+      return fallbackValue;
+    }
+  } catch (err) {
+    console.error(`   ❌ [${label}] Gemini error: ${err.message}`);
     return fallbackValue;
   }
 }
 
 async function callGeminiForVariableModel(input) {
   const userPrompt = buildVariableModelUserPrompt(input);
-  const parsed = await callGemini(userPrompt, VARIABLE_MODEL_SYSTEM_PROMPT, FALLBACK_VARIABLE_MODEL);
+  const parsed = await callGemini(userPrompt, VARIABLE_MODEL_SYSTEM_PROMPT, FALLBACK_VARIABLE_MODEL, false, "Variable Model Generation");
 
   if (!Array.isArray(parsed.dependent) || !Array.isArray(parsed.drivers) || !Array.isArray(parsed.controls)) {
     return FALLBACK_VARIABLE_MODEL;
@@ -72,7 +101,7 @@ async function callGeminiForVariableModel(input) {
 
 async function callGeminiForSurveyConfig(text) {
   const userPrompt = buildSurveyConfigUserPrompt(text);
-  const parsed = await callGemini(userPrompt, SURVEY_CONFIG_SYSTEM_PROMPT, HEALTHCARE_EXAMPLE_SURVEY);
+  const parsed = await callGemini(userPrompt, SURVEY_CONFIG_SYSTEM_PROMPT, HEALTHCARE_EXAMPLE_SURVEY, false, "Survey Config Extraction");
 
   return {
     title: typeof parsed.title === "string" ? parsed.title : "",
@@ -91,9 +120,57 @@ async function callGeminiForSurveyConfig(text) {
 
 const VALID_QUESTION_TYPES = new Set(["likert", "multiple_choice", "multi_select", "yes_no", "open_ended", "rating"]);
 
-async function callGeminiForQuestions(surveyDraft, variableModel) {
-  const userPrompt = buildQuestionGenUserPrompt(surveyDraft, variableModel);
-  const parsed = await callGemini(userPrompt, QUESTION_GEN_SYSTEM_PROMPT, FALLBACK_QUESTIONS);
+// Helper function to remove questions by position
+function removeQuestionsFromList(questions, message = "", count = 1) {
+  if (!Array.isArray(questions) || questions.length === 0) return questions;
+
+  const lowerMsg = message.toLowerCase();
+  const toRemove = Math.min(count, questions.length - 1);
+
+  if (/first|[#1]/.test(lowerMsg)) {
+    return questions.slice(toRemove);
+  } else if (/last/.test(lowerMsg)) {
+    return questions.slice(0, questions.length - toRemove);
+  } else if (/middle|center/.test(lowerMsg)) {
+    const start = Math.floor(questions.length / 2);
+    return [...questions.slice(0, start), ...questions.slice(start + toRemove)];
+  } else {
+    return questions.slice(0, questions.length - toRemove);
+  }
+}
+
+// Helper function to add questions
+async function addQuestionsToList(questions, surveyDraft, variableModel, count = 1) {
+  if (!Array.isArray(questions)) return questions;
+
+  try {
+    const addPrompt = buildAddQuestionsUserPrompt(surveyDraft, variableModel, questions, count);
+    const result = await callGemini(addPrompt, QUESTION_GEN_SYSTEM_PROMPT, { questions: [] }, false, `Chat — Add ${count} Question(s)`);
+
+    if (Array.isArray(result?.questions) && result.questions.length > 0) {
+      const validated = result.questions
+        .filter(
+          (q) =>
+            typeof q.id === "string" &&
+            typeof q.text === "string" &&
+            VALID_QUESTION_TYPES.has(q.type) &&
+            Array.isArray(q.options)
+        )
+        .slice(0, count);
+
+      if (validated.length > 0) {
+        return [...questions, ...validated];
+      }
+    }
+  } catch (err) {
+    console.error("Failed to add questions:", err);
+  }
+  return questions;
+}
+
+async function callGeminiForQuestions(surveyDraft, variableModel, previousQuestions = null, attemptLabel = "Question Generation") {
+  const userPrompt = buildQuestionGenUserPrompt(surveyDraft, variableModel, previousQuestions);
+  const parsed = await callGemini(userPrompt, QUESTION_GEN_SYSTEM_PROMPT, FALLBACK_QUESTIONS, false, attemptLabel);
 
   if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
     return FALLBACK_QUESTIONS;
@@ -130,79 +207,135 @@ async function callGeminiForQuestions(surveyDraft, variableModel) {
 // ---------------------------------------------------------------------------
 // MAX_REGEN_ATTEMPTS: how many times we'll try to improve questions before
 // giving up and returning the best result so far.
-// Attempt 1 = initial generation
-// Attempts 2..MAX = regeneration rounds
 // ---------------------------------------------------------------------------
-const MAX_REGEN_ATTEMPTS = 4;
+const MAX_REGEN_ATTEMPTS = 2;
 
 app.post("/api/generate-questions", async (req, res) => {
-  const { surveyDraft, variableModel } = req.body || {};
+  const { surveyDraft, variableModel, previousQuestions } = req.body || {};
+
+  // ── SSE setup ─────────────────────────────────────────────────────────────
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  /** Emit a workflow stage narration event. */
+  function emitStage(stage, message) {
+    res.write(`data: ${JSON.stringify({ type: "stage", stage, message })}\n\n`);
+  }
+
+  /** Emit the final payload and close the stream. */
+  function emitDone(payload) {
+    res.write(`data: ${JSON.stringify({ type: "done", ...payload })}\n\n`);
+    res.end();
+  }
+
+  /** Emit an error event and close the stream. */
+  function emitError(message) {
+    res.write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
+    res.end();
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   try {
+    // Stage 1 — Input Analysis
+    emitStage("Input Analysis", "Parsing survey topic, goals, and variable model…");
     const topic = surveyDraft?.goal || surveyDraft?.title || "general survey";
+    console.log(`\n🚀 [PIPELINE START] Topic: "${topic}"`);
 
-    let currentResult = await callGeminiForQuestions(surveyDraft, variableModel);
+    // Stage 2 — Draft Generation
+    emitStage("Draft Generation", "Generating initial question set from survey specification…");
+    let currentResult = await callGeminiForQuestions(surveyDraft, variableModel, previousQuestions, "Question Generation [Attempt 1]");
 
     if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) {
-      return res.json(currentResult);
+      return emitDone(currentResult);
     }
 
-    let currentEvals = null;
+    let bestResult = currentResult;
+    let bestEvals = null;
+    let bestIssueCount = Infinity;
     let attemptsMade = 0;
     let regenerated = false;
 
+    function countIssues(evals) {
+      let count = 0;
+      for (const e of evals) {
+        if (e.llm_scores.relevance     < 3) count++;
+        if (e.llm_scores.clarity       < 3) count++;
+        if (e.llm_scores.neutrality    < 3) count++;
+        if (e.llm_scores.answerability < 3) count++;
+        const minRelevance = e.variableRole === "control" ? 0.2 : 0.3;
+        if (e.variable_relevance < minRelevance) count++;
+        count += (e.rule_violations?.length || 0);
+        count += (e.response_option_issues?.length || 0);
+        if (e.max_duplicate_similarity > 0.85) count++;
+        if (e.skip_logic_issue)     count++;
+        if (e.response_scale_issue) count++;
+      }
+      return count;
+    }
+
     try {
-      // Evaluate → regenerate loop
       for (let attempt = 1; attempt <= MAX_REGEN_ATTEMPTS; attempt++) {
         attemptsMade = attempt;
 
-        const evals = await evaluateQuestions(topic, currentResult.questions, callGemini);
-        currentEvals = evals;
-
-        console.log(`[Attempt ${attempt}] needRegeneration: ${needRegeneration(evals)}`);
-
-        // Questions are clean — stop here
-        if (!needRegeneration(evals)) {
-          break;
-        }
-
-        // Reached the limit — return best result so far
-        if (attempt === MAX_REGEN_ATTEMPTS) {
-          console.warn(`[Attempt ${attempt}] Max regeneration attempts reached. Returning best result.`);
-          break;
-        }
-
-        // Build feedback and regenerate
-        const feedback = buildRegenerationFeedback(evals, topic);
-        console.log(`[Attempt ${attempt}] Regenerating with feedback…`);
-        currentResult = await callGeminiForQuestions(
-          { ...surveyDraft, feedback },
-          variableModel
+        // Stage 3 — Internal Review
+        const qCount = currentResult.questions.length;
+        emitStage(
+          "Internal Review",
+          `Evaluating ${qCount} question${qCount !== 1 ? "s" : ""} for clarity, neutrality, relevance, and bias…`
         );
+        console.log(`\n🔍 [EVALUATION] Attempt ${attempt}/${MAX_REGEN_ATTEMPTS} — evaluating ${qCount} questions`);
+        const evals = await evaluateQuestions(topic, currentResult.questions, callGemini);
+        const issueCount = countIssues(evals);
+        const regen = needRegeneration(evals);
+
+        console.log(`   Issues found : ${issueCount}`);
+        console.log(`   Needs regen  : ${regen}`);
+
+        if (issueCount < bestIssueCount) {
+          bestIssueCount = issueCount;
+          bestResult = currentResult;
+          bestEvals = evals;
+          console.log(`   ⭐ New best result saved (${issueCount} issue(s))`);
+        }
+
+        if (!regen) {
+          console.log(`   ✅ Quality threshold met — stopping early`);
+          break;
+        }
+
+        if (attempt === MAX_REGEN_ATTEMPTS) {
+          console.warn(`   ⚠️  Max attempts reached. Best result had ${bestIssueCount} issue(s).`);
+          break;
+        }
+
+        // Stage 4 — Refinement (only emitted when regeneration is needed)
+        emitStage(
+          "Refinement",
+          `${issueCount} issue${issueCount !== 1 ? "s" : ""} detected — regenerating with targeted feedback…`
+        );
+        console.log(`\n♻️  [REGENERATION] Attempt ${attempt + 1}/${MAX_REGEN_ATTEMPTS} — regenerating with feedback`);
+        const feedback = buildRegenerationFeedback(evals, topic);
+        currentResult = await callGeminiForQuestions({ ...surveyDraft, feedback }, variableModel, previousQuestions, `Question Regeneration [Attempt ${attempt + 1}]`);
         regenerated = true;
 
-        if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) {
-          console.warn(`[Attempt ${attempt}] Regeneration returned empty questions. Stopping.`);
-          break;
-        }
+        if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) break;
       }
 
-      return res.json({
-        ...currentResult,
-        evaluations: currentEvals,
-        regenerated,
-        attemptsMade
-      });
+      // Stage 5 — Final Approval
+      emitStage("Final Approval", "Quality checks passed — preparing final question set…");
+      return emitDone({ ...bestResult, evaluations: bestEvals, regenerated, attemptsMade });
 
     } catch (evalErr) {
-      // Evaluation pipeline failed — still return questions without eval
-      console.error("Evaluation/regeneration loop failed, returning questions without eval:", evalErr);
-      return res.json(currentResult);
+      console.error("Evaluation loop failed, returning questions without eval:", evalErr);
+      emitStage("Final Approval", "Evaluation skipped — returning generated questions…");
+      return emitDone(currentResult);
     }
 
   } catch (err) {
     console.error("Error in /api/generate-questions:", err);
-    res.status(500).json(FALLBACK_QUESTIONS);
+    return emitError("Question generation failed. Check server logs.");
   }
 });
 
@@ -251,6 +384,122 @@ app.post("/api/evaluate-questions", async (req, res) => {
   } catch (err) {
     console.error("Error in /api/evaluate-questions:", err);
     res.status(500).json({ error: "Evaluation failed" });
+  }
+});
+
+/** Parse a count from a message, accepting both digit ("2") and word ("two") numbers. */
+function parseCount(message, fallback = 1) {
+  const WORD_NUMBERS = {
+    one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  };
+  const digitMatch = message.match(/\b(\d+)\b/);
+  if (digitMatch) return parseInt(digitMatch[1]);
+  for (const [word, num] of Object.entries(WORD_NUMBERS)) {
+    if (new RegExp(`\\b${word}\\b`).test(message)) return num;
+  }
+  return fallback;
+}
+
+app.post("/api/chat", async (req, res) => {
+  const { message, context = {}, conversationHistory = [], action = "chat" } = req.body || {};
+
+  if (!message || typeof message !== "string") {
+    return res.status(400).json({ error: "Message is required" });
+  }
+
+  try {
+    const systemPrompt = buildChatSystemPrompt(context);
+    const lowerMessage = message.toLowerCase();
+    const hasAddIntent = /add.*question|add\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)|create.*question|new question|more question|(\d+|one|two|three|four|five)\s+more\s+question|additional.*question/i.test(lowerMessage);
+    const hasRemoveIntent = /remove|delete|less question|fewer question|remove.*question|delete.*question/i.test(lowerMessage);
+    const hasEditIntent = /simpler|shorter|longer|clearer|different|change|reword|modify|edit|regenerate|improve/i.test(lowerMessage);
+
+    // Handle question modifications
+    if ((hasAddIntent || hasRemoveIntent || hasEditIntent) && Array.isArray(context.questions) && context.questions.length > 0) {
+      let modifiedQuestions = context.questions;
+      let actionLabel = "modified";
+
+      if (hasRemoveIntent) {
+        const countToRemove = parseCount(lowerMessage);
+        modifiedQuestions = removeQuestionsFromList(context.questions, lowerMessage, countToRemove);
+        actionLabel = `removed ${countToRemove} question${countToRemove !== 1 ? "s" : ""}`;
+      } else if (hasAddIntent) {
+        const countToAdd = parseCount(lowerMessage);
+        modifiedQuestions = await addQuestionsToList(context.questions, context.surveyDraft, context.variableModel, countToAdd);
+        actionLabel = `added ${countToAdd} question${countToAdd !== 1 ? "s" : ""}`;
+      } else if (hasEditIntent) {
+        const feedbackPrompt = buildRegenerationFeedbackPrompt(message, context.evaluations);
+        const improvementResult = await callGeminiForQuestions(
+          { ...context.surveyDraft, feedback: feedbackPrompt },
+          context.variableModel,
+          context.questions,
+          "Chat — Edit/Improve Questions"
+        );
+        if (improvementResult && Array.isArray(improvementResult.questions)) {
+          modifiedQuestions = improvementResult.questions;
+        }
+        actionLabel = "updated";
+      }
+
+      const renumberedQuestions = modifiedQuestions.map((q, idx) => ({
+        ...q,
+        id: `q${idx + 1}`
+      }));
+
+      return res.json({
+        message: `I've ${actionLabel}. Here are the updated questions.`,
+        action: "questions_regenerated",
+        regeneratedQuestions: renumberedQuestions,
+        regenerationFeedback: message,
+      });
+    }
+
+    // Handle explicit regeneration action
+    if (action === "regenerate_questions" && Array.isArray(context.questions) && context.questions.length > 0) {
+      const feedbackPrompt = buildRegenerationFeedbackPrompt(message, context.evaluations);
+      const improvementResult = await callGeminiForQuestions(
+        { ...context.surveyDraft, feedback: feedbackPrompt },
+        context.variableModel,
+        context.questions,
+        "Chat — Explicit Regeneration"
+      );
+
+      if (improvementResult && Array.isArray(improvementResult.questions) && improvementResult.questions.length > 0) {
+        return res.json({
+          message: "I've regenerated the questions based on your feedback. The new questions aim to address your concerns while maintaining survey quality.",
+          action: "questions_regenerated",
+          regeneratedQuestions: improvementResult.questions,
+          regenerationFeedback: message,
+        });
+      }
+    }
+
+    // Standard chat response via Gemini
+    const contents = [
+      ...conversationHistory.slice(-10).map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }]
+      })),
+      { role: "user", parts: [{ text: message }] }
+    ];
+
+    const chatResponse = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents,
+      config: { systemInstruction: systemPrompt }
+    });
+
+    const chatMessage = chatResponse.text || "I'm unable to respond right now. Please try again.";
+
+    res.json({ message: chatMessage, action: "chat" });
+
+  } catch (err) {
+    console.error("Error in /api/chat:", err);
+    res.status(500).json({
+      message: "An error occurred while processing your request. Please try again.",
+      action: "chat"
+    });
   }
 });
 

@@ -77,19 +77,15 @@ function loadInitialState() {
 }
 
 export function SurveyProvider({ children }) {
-  const [surveyDraft, setSurveyDraft] = useState(defaultSurveyDraft);
-  const [variableModel, setVariableModel] = useState(defaultVariableModelState);
-  const [questionsState, setQuestionsState] = useState(defaultQuestionsState);
-  const [stepStatus, setStepStatus] = useState(defaultStepStatus);
-  const [evaluations, setEvaluations] = useState(defaultEvaluations);
-  useEffect(() => {
-    const initial = loadInitialState();
-    setSurveyDraft(initial.surveyDraft);
-    setVariableModel(initial.variableModel);
-    setQuestionsState(initial.questionsState);
-    setStepStatus(initial.stepStatus);
-    setEvaluations(initial.evaluations);
-  }, []);
+  // Load from localStorage synchronously via lazy initializers.
+  // This ensures the first render already has the correct state, eliminating
+  // the async race where children would see stale defaults before a useEffect
+  // loaded localStorage — which broke auto-generation on navigation.
+  const [surveyDraft, setSurveyDraft] = useState(() => loadInitialState().surveyDraft);
+  const [variableModel, setVariableModel] = useState(() => loadInitialState().variableModel);
+  const [questionsState, setQuestionsState] = useState(() => loadInitialState().questionsState);
+  const [stepStatus, setStepStatus] = useState(() => loadInitialState().stepStatus);
+  const [evaluations, setEvaluations] = useState(() => loadInitialState().evaluations || []);
 
   useEffect(() => {
     const payload = JSON.stringify({
@@ -141,10 +137,20 @@ export function SurveyProvider({ children }) {
       sampleSize,
       draftSaved: true
     });
+    // Clear all downstream results — survey config changed so previous
+    // generation is stale. This ensures Step 2/3 always generate fresh.
+    setVariableModel(defaultVariableModelState);
+    setQuestionsState(defaultQuestionsState);
+    setEvaluations([]);
     setStepStatus((prev) => ({
       ...prev,
       1: "completed",
-      2: prev[2] === "locked" ? "unlocked" : prev[2]
+      2: "unlocked",
+      3: "locked",
+      4: "locked",
+      5: "locked",
+      6: "locked",
+      7: "locked"
     }));
     return sampleSize;
   }

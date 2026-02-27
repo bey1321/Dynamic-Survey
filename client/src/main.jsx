@@ -5,16 +5,17 @@ import App from "./App";
 import "./index.css";
 import { SurveyProvider } from "./state/SurveyContext";
 import { ToastProvider } from "./state/ToastContext";
+import { ChatProvider } from "./state/ChatContext";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <ToastProvider>
+  <BrowserRouter>
+    <ToastProvider>
+      <ChatProvider>
         <SurveyProvider>
           <App />
         </SurveyProvider>
-      </ToastProvider>
-    </BrowserRouter>
-  </React.StrictMode>
+      </ChatProvider>
+    </ToastProvider>
+  </BrowserRouter>
 );
 

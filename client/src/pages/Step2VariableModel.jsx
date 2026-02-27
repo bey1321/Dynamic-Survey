@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useSurvey } from "../state/SurveyContext";
 import { useStepBase } from "../state/StepNavContext";
 
 function Step2VariableModel() {
   const navigate = useNavigate();
+  const location = useLocation();
   const stepBase = useStepBase();
-  const { surveyDraft, variableModel, setVariableModelFromAI, approveVariableModel, isStepUnlocked } = useSurvey();
+  const { surveyDraft, variableModel, setVariableModelFromAI, isStepUnlocked } = useSurvey();
   const [localModel, setLocalModel] = useState({
     dependent: [],
     drivers: [],
@@ -14,20 +15,48 @@ function Step2VariableModel() {
   });
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const pendingRef = useRef(false);
   const [error, setError] = useState("");
 
   const locked = !isStepUnlocked(2) || !surveyDraft.draftSaved;
 
+
+
+  // Sync localModel from context whenever the model changes (e.g. navigating back)
   useEffect(() => {
-    setLocalModel({
-      dependent: [],
-      drivers: [],
-      controls: []
-    });
-  }, []);
+    if (variableModel?.model) {
+      setLocalModel({
+        dependent: variableModel.model.dependent || [],
+        drivers: variableModel.model.drivers || [],
+        controls: variableModel.model.controls || [],
+      });
+    }
+  }, [variableModel.model]);
+
+  // Explicit trigger: fires when the user clicks "Next" in Step 1.
+  // Uses location.state so it only runs once per navigation (state is cleared
+  // on first use, preventing re-trigger on navigate-back).
+  useEffect(() => {
+    if (!location.state?.autoGenerate) return;
+    if (locked) return;
+    navigate(location.pathname, { replace: true, state: {} });
+    handleGenerate();
+  }, [locked]); // watch locked so it retries if state loads after mount
+
+  // Fallback: auto-generate when there is no model and the step is unlocked
+  // (handles direct navigation / page refresh without going through Step 1).
+  useEffect(() => {
+    if (variableModel?.model?.dependent?.length) return;
+    if (locked) return;
+    handleGenerate();
+  }, [variableModel.model, locked]);
+
 
   function handleGenerate() {
-    if (locked) return;
+    if (locked || loading || pendingRef.current) return;
+    pendingRef.current = true;
+    // Clear display immediately — stored/default values only appear after failure
+    setLocalModel({ dependent: [], drivers: [], controls: [] });
     setLoading(true);
     setError("");
 
@@ -64,10 +93,19 @@ function Step2VariableModel() {
       })
       .catch((err) => {
         console.error("Error generating variable model", err);
+        // On failure, restore whatever was stored before generation started
+        if (variableModel?.model) {
+          setLocalModel({
+            dependent: variableModel.model.dependent || [],
+            drivers: variableModel.model.drivers || [],
+            controls: variableModel.model.controls || [],
+          });
+        }
         setError("Failed to generate variable model from AI.");
       })
       .finally(() => {
         setLoading(false);
+        pendingRef.current = false;
       });
   }
 
@@ -93,19 +131,7 @@ function Step2VariableModel() {
     });
   }
 
-  function handleApprove() {
-    const cleaned = {
-      dependent: localModel.dependent.map((s) => s.trim()).filter(Boolean),
-      drivers: localModel.drivers.map((s) => s.trim()).filter(Boolean),
-      controls: localModel.controls.map((s) => s.trim()).filter(Boolean)
-    };
-    approveVariableModel(cleaned);
-  }
-
-  const versionLabel =
-    variableModel.approvedVersion > 0
-      ? `Variable Model Approved (v${variableModel.approvedVersion})`
-      : variableModel.status;
+  const versionLabel = variableModel.status;
 
   const inputCls = "w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-800 outline-none transition-all duration-200 border-[#b0d4dc] bg-white focus:border-[#2AABBA] focus:ring-2 focus:ring-[#2AABBA]/20";
 
@@ -219,33 +245,20 @@ function Step2VariableModel() {
 
       {/* Actions */}
       <div className="flex items-center justify-between pt-2">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleApprove}
-            disabled={locked}
-            className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-full text-white transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ backgroundColor: "#5BBF8E" }}
-            onMouseEnter={e => { if (!locked) e.currentTarget.style.backgroundColor = "#3ea873"; }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "#5BBF8E"; }}
-          >
-            Approve Model
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsEditing((prev) => !prev)}
-            disabled={locked}
-            className="text-sm font-semibold px-4 py-2.5 rounded-full border transition-colors duration-200 disabled:opacity-40"
-            style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
-            onMouseEnter={e => { if (!locked) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-          >
-            {isEditing ? "Done Editing" : "Edit"}
-          </button>
-        </div>
         <button
           type="button"
-          onClick={() => navigate(`${stepBase}/3-questions`)}
+          onClick={() => setIsEditing((prev) => !prev)}
+          disabled={locked}
+          className="text-sm font-semibold px-4 py-2.5 rounded-full border transition-colors duration-200 disabled:opacity-40"
+          style={{ borderColor: "#2AABBA", color: "#1B6B8A" }}
+          onMouseEnter={e => { if (!locked) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+          onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
+        >
+          {isEditing ? "Done Editing" : "Edit"}
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate(`${stepBase}/3-questions`, { state: { autoGenerate: true } })}
           className="flex items-center gap-2 text-sm font-bold px-5 py-2.5 rounded-full text-white shadow-md transition-colors duration-200"
           style={{ backgroundColor: "#1B6B8A" }}
           onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#2AABBA"; }}
@@ -262,4 +275,3 @@ function Step2VariableModel() {
 }
 
 export default Step2VariableModel;
-
