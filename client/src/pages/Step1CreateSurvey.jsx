@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useSurvey } from "../state/SurveyContext";
 import { useStepBase } from "../state/StepNavContext";
 
 function Step1CreateSurvey() {
   const navigate = useNavigate();
+  const location = useLocation();
   const stepBase = useStepBase();
   const { surveyDraft, saveSurveyDraft, loadHealthcareExample } = useSurvey();
+  const mode = location.state?.mode || "ai";
   const [form, setForm] = useState(surveyDraft);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(surveyDraft.draftSaved);
@@ -49,7 +51,7 @@ function Step1CreateSurvey() {
       return;
     }
     setError("");
-    saveSurveyDraft(form);
+    saveSurveyDraft(form, mode);
     setSaved(true);
     navigate(`${stepBase}/2-variables`, { state: { autoGenerate: true } });
   }
@@ -68,15 +70,24 @@ function Step1CreateSurvey() {
     setExtractError("");
     setExtracting(true);
 
+    const isPdf = uploadFile.type === "application/pdf" || uploadFile.name.toLowerCase().endsWith(".pdf");
     const reader = new FileReader();
     reader.onload = function () {
-      const content = typeof reader.result === "string" ? reader.result : "";
+      let content = "";
+      let isPdfFlag = false;
+      if (isPdf) {
+        const dataUrl = typeof reader.result === "string" ? reader.result : "";
+        content = dataUrl.split(",")[1] || "";
+        isPdfFlag = true;
+      } else {
+        content = typeof reader.result === "string" ? reader.result : "";
+      }
       fetch("/api/extract-survey-config", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ content })
+        body: JSON.stringify({ content, isPdf: isPdfFlag })
       })
         .then(async (res) => {
           if (!res.ok) {
@@ -112,7 +123,11 @@ function Step1CreateSurvey() {
       setExtracting(false);
     };
 
-    reader.readAsText(uploadFile);
+    if (isPdf) {
+      reader.readAsDataURL(uploadFile);
+    } else {
+      reader.readAsText(uploadFile);
+    }
   }
 
 /* ── shared input style ── */
@@ -187,13 +202,13 @@ function Step1CreateSurvey() {
 
             <div className="md:col-span-2">
               <label className={labelCls} style={{ color: "#1B6B8A" }}>Survey Goal</label>
-              <input
-                type="text"
+              <textarea
                 name="goal"
                 value={form.goal || ""}
                 onChange={handleChange}
                 className={inputCls}
                 placeholder="e.g. Identify key drivers of dissatisfaction"
+                rows={3}
               />
             </div>
           </div>
@@ -307,7 +322,7 @@ function Step1CreateSurvey() {
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
               {uploadFile ? uploadFile.name : "Choose file"}
-              <input type="file" onChange={handleFileChange} className="sr-only" />
+              <input type="file" accept=".pdf,.txt,.md,.csv" onChange={handleFileChange} className="sr-only" />
             </label>
             <button
               type="button"
@@ -346,28 +361,6 @@ function Step1CreateSurvey() {
           </button>
         </div>
       </form>
-
-      {/* Saved confirmation */}
-      {saved && (
-        <div
-          className="rounded-xl border p-4 space-y-1.5"
-          style={{ borderColor: "#5BBF8E", backgroundColor: "#f0faf5" }}
-        >
-          <p className="text-sm font-semibold flex items-center gap-2" style={{ color: "#2d8c5e" }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-              <polyline points="22 4 12 14.01 9 11.01" />
-            </svg>
-            Draft saved successfully
-          </p>
-          <p className="text-xs" style={{ color: "#5a8a6a" }}>
-            Estimated sample size: ~385 (95% confidence, ±5% margin)
-          </p>
-          <p className="text-xs" style={{ color: "#5a8a6a" }}>
-            Estimated completion time: 3–4 minutes
-          </p>
-        </div>
-      )}
     </div>
   );
 }

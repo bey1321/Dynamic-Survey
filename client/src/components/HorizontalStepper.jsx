@@ -23,19 +23,20 @@ const BRAND = {
 export default function HorizontalStepper() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { isStepUnlocked } = useSurvey();
+  const { isStepUnlocked, stepStatus } = useSurvey();
 
-  const currentIndex = STEPS.findIndex((s) => pathname.startsWith(s.path));
+  const visibleSteps = STEPS.filter((s) => stepStatus[s.id] !== "skipped");
+  const currentIndex = visibleSteps.findIndex((s) => pathname.startsWith(s.path));
 
   return (
     <div className="w-full bg-white border-b px-8 py-6" style={{ borderColor: "#d0eaea" }}>
       <div className="max-w-3xl mx-auto">
         <div className="flex items-center">
-          {STEPS.map((step, idx) => {
+          {visibleSteps.map((step, idx) => {
             const isCompleted = idx < currentIndex;
             const isActive    = idx === currentIndex;
             const unlocked    = isStepUnlocked(step.id);
-            const isLast      = idx === STEPS.length - 1;
+            const isLast      = idx === visibleSteps.length - 1;
 
             const circleColor = isCompleted
               ? BRAND.green

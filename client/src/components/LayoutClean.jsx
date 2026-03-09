@@ -8,7 +8,7 @@ import rakscLogo from "../assets/raksc-logo.png";
 
 function LayoutClean({ children }) {
   const navigate = useNavigate();
-  const { surveyDraft, globalStatus } = useSurvey();
+  const { surveyDraft, globalStatus, surveyMode } = useSurvey();
 
   const title =
     surveyDraft.title && surveyDraft.title.trim().length > 0
@@ -43,7 +43,7 @@ function LayoutClean({ children }) {
       </header>
 
       {/* Horizontal step progress */}
-      <HorizontalStepper />
+      {surveyMode !== "scratch" && <HorizontalStepper />}
 
       {/* Page content */}
       <main className="flex-1 max-w-4xl mx-auto w-full px-6 py-8">

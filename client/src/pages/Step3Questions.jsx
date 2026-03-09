@@ -50,6 +50,7 @@ function Step3Questions() {
     setEvaluations,
     evaluations,
     approveQuestions,
+    surveyMode,
   } = useSurvey();
   const { showToast } = useToast();
   const { updateConversationContext } = useChat();
@@ -343,7 +344,7 @@ function commitEdit(index, updatedQuestion) {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold" style={{ color: "#1B6B8A" }}>Survey Questions</h2>
-                <p className="text-sm mt-0.5" style={{ color: "#9ab8c0" }}>AI-generated question set</p>
+                <p className="text-sm mt-0.5" style={{ color: "#9ab8c0" }}>{surveyMode === "scratch" ? "Build your question set manually" : "AI-generated question set"}</p>
               </div>
               {questions && questions.length > 0 && (
                 <span className="text-[11px] font-semibold px-3 py-1 rounded-full" style={{ backgroundColor: "#d0eaea", color: "#1B6B8A" }}>
@@ -353,27 +354,31 @@ function commitEdit(index, updatedQuestion) {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowQualityReport(true)}
-                disabled={!evaluations || evaluations.length === 0}
-                className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
-                style={{ borderColor: "#536b6e", color: "#1B6B8A" }}
-              >
-                Quality Report
-              </button>
+              {surveyMode !== "scratch" && (
+                <button
+                  type="button"
+                  onClick={() => setShowQualityReport(true)}
+                  disabled={!evaluations || evaluations.length === 0}
+                  className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
+                  style={{ borderColor: "#536b6e", color: "#1B6B8A" }}
+                >
+                  Quality Report
+                </button>
+              )}
 
-              <button
-                type="button"
-                onClick={handleRegenerate}
-                disabled={!questions || questions.length === 0 || loading}
-                className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40 flex items-center gap-1.5"
-                style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
-                title="Regenerate questions with improvements"
-              >
-                <RotateCcw size={13} />
-                Regenerate
-              </button>
+              {surveyMode !== "scratch" && (
+                <button
+                  type="button"
+                  onClick={handleRegenerate}
+                  disabled={!questions || questions.length === 0 || loading}
+                  className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40 flex items-center gap-1.5"
+                  style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
+                  title="Regenerate questions with improvements"
+                >
+                  <RotateCcw size={13} />
+                  Regenerate
+                </button>
+              )}
 
               <button
                 type="button"
@@ -390,10 +395,9 @@ function commitEdit(index, updatedQuestion) {
               <button
                 type="button"
                 onClick={handleAddQuestion}
-                disabled={!questions}
-                className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200 disabled:opacity-40"
+                className="text-xs font-semibold px-4 py-2 rounded-full border transition-colors duration-200"
                 style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
-                onMouseEnter={e => { if (questions) e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = "#e8f6f7"; }}
                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
               >
                 + Add Question
@@ -464,6 +468,7 @@ function commitEdit(index, updatedQuestion) {
                       index={index}
                       isDragging={dragIndex === index}
                       isDragOver={dragOverIndex === index && dragIndex !== index}
+                      scratchMode={surveyMode === "scratch"}
                       onEdit={() => setEditingId(q.id)}
                       onDelete={() => handleDeleteQuestion(index)}
                       onDragStart={() => handleDragStart(index)}
@@ -477,8 +482,15 @@ function commitEdit(index, updatedQuestion) {
             )}
 
             {!loading && (!questions || questions.length === 0) && (
-              <div className="rounded-xl border py-12 text-center" style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}>
-                <p className="text-sm" style={{ color: "#9ab8c0" }}>No questions yet. Questions will generate automatically.</p>
+              <div className="rounded-xl border py-12 text-center space-y-3" style={{ borderColor: "#d0eaea", backgroundColor: "#f8fdfd" }}>
+                {surveyMode === "scratch" ? (
+                  <>
+                    <p className="text-sm font-medium" style={{ color: "#1B6B8A" }}>No questions yet.</p>
+                    <p className="text-xs" style={{ color: "#9ab8c0" }}>Click <strong>+ Add Question</strong> above to start building your survey manually.</p>
+                  </>
+                ) : (
+                  <p className="text-sm" style={{ color: "#9ab8c0" }}>No questions yet. Questions will generate automatically.</p>
+                )}
               </div>
             )}
           </div>
@@ -525,7 +537,7 @@ function commitEdit(index, updatedQuestion) {
 /*  Read-only question card                                           */
 /* ------------------------------------------------------------------ */
 
-function QuestionCard({ question: q, isDragging, isDragOver, onEdit, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function QuestionCard({ question: q, isDragging, isDragOver, scratchMode, onEdit, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }) {
   const roleStyle = ROLE_COLORS[q.variableRole] || { bg: "#e8f6f7", text: "#2AABBA" };
   return (
     <div
@@ -561,15 +573,19 @@ function QuestionCard({ question: q, isDragging, isDragOver, onEdit, onDelete, o
           <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: "#e8f6f7", color: "#1B6B8A" }}>
             {TYPE_LABELS[q.type] || q.type}
           </span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: roleStyle.bg, color: roleStyle.text }}>
-            {q.variableRole}
-          </span>
+          {!scratchMode && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: roleStyle.bg, color: roleStyle.text }}>
+              {q.variableRole}
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="text-xs mb-1" style={{ color: "#9ab8c0" }}>
-        Variable: <span className="font-medium" style={{ color: "#2d6a80" }}>{q.variable}</span>
-      </div>
+      {!scratchMode && (
+        <div className="text-xs mb-1" style={{ color: "#9ab8c0" }}>
+          Variable: <span className="font-medium" style={{ color: "#2d6a80" }}>{q.variable}</span>
+        </div>
+      )}
 
       {q.branchFrom && (
         <div className="text-xs mb-1" style={{ color: "#2AABBA" }}>
