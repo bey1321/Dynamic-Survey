@@ -3,6 +3,9 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
 import { GoogleGenAI } from "@google/genai";
 import {
   VARIABLE_MODEL_SYSTEM_PROMPT,
@@ -27,7 +30,7 @@ dotenv.config({ path: join(__dirname, ".env") });
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "20mb" }));
 
 // ── Gemini ────────────────────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -356,10 +359,18 @@ app.post("/api/variable-model", async (req, res) => {
 });
 
 app.post("/api/extract-survey-config", async (req, res) => {
-  const content = typeof req.body?.content === "string" ? req.body.content : "";
+  const { content, isPdf } = req.body || {};
 
   try {
-    const config = await callGeminiForSurveyConfig(content);
+    let textContent = typeof content === "string" ? content : "";
+
+    if (isPdf && textContent) {
+      const buffer = Buffer.from(textContent, "base64");
+      const pdfData = await pdfParse(buffer);
+      textContent = pdfData.text;
+    }
+
+    const config = await callGeminiForSurveyConfig(textContent);
     res.json(config);
   } catch (err) {
     console.error("Error in /api/extract-survey-config:", err);

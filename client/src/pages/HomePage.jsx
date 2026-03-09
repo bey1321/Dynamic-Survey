@@ -1,12 +1,19 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import rakscLogo from "../assets/raksc-logo.png";
+import { useSurvey } from "../state/SurveyContext";
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { initScratchMode } = useSurvey();
 
-  const handleCreateSurvey = () => {
-    navigate("/survey/step/1-create");
+  const handleCreateWithAI = () => {
+    navigate("/survey/step/1-create", { state: { mode: "ai" } });
+  };
+
+  const handleCreateFromScratch = () => {
+    initScratchMode();
+    navigate("/survey/step/3-questions");
   };
 
   return (
@@ -53,16 +60,33 @@ export default function HomePage() {
           Create AI-powered, dynamic surveys designed to collect better data and deeper insights.
         </p>
 
-        {/* CTA Button */}
-        <button
-          onClick={handleCreateSurvey}
-          className="text-white text-base font-semibold px-8 py-4 rounded-full transition-colors duration-200 shadow-lg"
-          style={{ backgroundColor: "#1B6B8A" }}
-          onMouseEnter={e => (e.target.style.backgroundColor = "#2AABBA")}
-          onMouseLeave={e => (e.target.style.backgroundColor = "#1B6B8A")}
-        >
-          Create your survey
-        </button>
+        {/* CTA Buttons */}
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          <button
+            onClick={handleCreateWithAI}
+            className="text-white text-base font-semibold px-8 py-4 rounded-full transition-colors duration-200 shadow-lg"
+            style={{ backgroundColor: "#1B6B8A" }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#2AABBA")}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#1B6B8A")}
+          >
+            ✦ Create with AI
+          </button>
+          <button
+            onClick={handleCreateFromScratch}
+            className="text-base font-semibold px-8 py-4 rounded-full transition-colors duration-200 border-2"
+            style={{ color: "#1B6B8A", borderColor: "#1B6B8A", backgroundColor: "transparent" }}
+            onMouseEnter={e => {
+              e.currentTarget.style.backgroundColor = "#1B6B8A";
+              e.currentTarget.style.color = "#ffffff";
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.backgroundColor = "transparent";
+              e.currentTarget.style.color = "#1B6B8A";
+            }}
+          >
+            Create from scratch
+          </button>
+        </div>
       </main>
 
       {/* Footer accent bar */}

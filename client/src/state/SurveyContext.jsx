@@ -86,6 +86,7 @@ export function SurveyProvider({ children }) {
   const [questionsState, setQuestionsState] = useState(() => loadInitialState().questionsState);
   const [stepStatus, setStepStatus] = useState(() => loadInitialState().stepStatus);
   const [evaluations, setEvaluations] = useState(() => loadInitialState().evaluations || []);
+  const [surveyMode, setSurveyMode] = useState("ai");
 
   useEffect(() => {
     const payload = JSON.stringify({
@@ -129,7 +130,7 @@ export function SurveyProvider({ children }) {
     return Math.round(n);
   }
 
-  function saveSurveyDraft(draft) {
+  function saveSurveyDraft(draft, mode = "ai") {
     const sampleSize = computeSampleSize(draft.confidence, draft.margin);
     setSurveyDraft({
       ...surveyDraft,
@@ -142,16 +143,29 @@ export function SurveyProvider({ children }) {
     setVariableModel(defaultVariableModelState);
     setQuestionsState(defaultQuestionsState);
     setEvaluations([]);
-    setStepStatus((prev) => ({
-      ...prev,
-      1: "completed",
-      2: "unlocked",
-      3: "locked",
-      4: "locked",
-      5: "locked",
-      6: "locked",
-      7: "locked"
-    }));
+    if (mode === "scratch") {
+      setStepStatus((prev) => ({
+        ...prev,
+        1: "completed",
+        2: "skipped",
+        3: "unlocked",
+        4: "locked",
+        5: "locked",
+        6: "locked",
+        7: "locked"
+      }));
+    } else {
+      setStepStatus((prev) => ({
+        ...prev,
+        1: "completed",
+        2: "unlocked",
+        3: "locked",
+        4: "locked",
+        5: "locked",
+        6: "locked",
+        7: "locked"
+      }));
+    }
     return sampleSize;
   }
 
@@ -245,6 +259,24 @@ export function SurveyProvider({ children }) {
   }));
   }
 
+  function initScratchMode() {
+    setSurveyMode("scratch");
+    setSurveyDraft(defaultSurveyDraft);
+    setVariableModel(defaultVariableModelState);
+    setQuestionsState(defaultQuestionsState);
+    setEvaluations([]);
+    setStepStatus((prev) => ({
+      ...prev,
+      1: "skipped",
+      2: "skipped",
+      3: "unlocked",
+      4: "locked",
+      5: "locked",
+      6: "locked",
+      7: "locked"
+    }));
+  }
+
   function resetDemoData() {
     setSurveyDraft(defaultSurveyDraft);
     setVariableModel(defaultVariableModelState);
@@ -257,7 +289,7 @@ export function SurveyProvider({ children }) {
   }
 
   function isStepUnlocked(step) {
-    return stepStatus[step] === "unlocked" || stepStatus[step] === "completed";
+    return stepStatus[step] === "unlocked" || stepStatus[step] === "completed" || stepStatus[step] === "skipped";
   }
 
   function hasEvaluationIssues(thresholds = {}) {
@@ -286,7 +318,9 @@ export function SurveyProvider({ children }) {
     questionsState,
     stepStatus,
     globalStatus,
-    evaluations,       
+    evaluations,
+    surveyMode,
+    setSurveyMode,
     setEvaluations,
     saveSurveyDraft,
     loadHealthcareExample,
@@ -296,6 +330,7 @@ export function SurveyProvider({ children }) {
     updateQuestions,
     approveQuestions,
     completeQualityCheck,
+    initScratchMode,
     resetDemoData,
     isStepUnlocked,
     hasEvaluationIssues
