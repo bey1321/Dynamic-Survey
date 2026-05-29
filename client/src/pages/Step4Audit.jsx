@@ -1,30 +1,41 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useSurvey } from "../state/SurveyContext";
 import { QUALITY_THRESHOLDS } from "../../../shared/constants.js";
 
 // Helper to interpret Flesch Reading Ease score
-function readabilityLevel(score) {
-  if (score >= 90) return "Very Easy";
-  if (score >= 80) return "Easy";
-  if (score >= 70) return "Fairly Easy";
-  if (score >= 60) return "Standard";
-  if (score >= 50) return "Fairly Difficult";
-  if (score >= 30) return "Difficult";
-  return "Very Difficult";
+function readabilityLevel(score, t) {
+  if (score >= 90) return t("survey:veryEasy");
+  if (score >= 80) return t("survey:easy");
+  if (score >= 70) return t("survey:fairlyEasy");
+  if (score >= 60) return t("survey:standard");
+  if (score >= 50) return t("survey:fairlyDifficult");
+  if (score >= 30) return t("survey:difficult");
+  return t("survey:veryDifficult");
 }
 
 function Step4Audit() {
-  const { evaluations, hasEvaluationIssues, setEvaluations, surveyDraft, variableModel, setQuestionsFromAI } = useSurvey();
+  const { t } = useTranslation(["common", "survey"]);
+  const {
+    evaluations,
+    hasEvaluationIssues,
+    setEvaluations,
+    surveyDraft,
+    variableModel,
+    setQuestionsFromAI,
+  } = useSurvey();
   const navigate = useNavigate();
   const [regenerating, setRegenerating] = useState(false);
 
   if (!evaluations || evaluations.length === 0) {
     return (
       <div className="space-y-4">
-        <div className="mono-block inline-block mb-2">[Quality Check (Bias + Validity)]</div>
+        <div className="mono-block inline-block mb-2">
+          [{t("survey:qualityCheckTitle")}]
+        </div>
         <div className="text-sm text-slate-400 py-6">
-          No quality check results yet. Go to Step 3 and click &quot;Run Quality Check&quot;.
+          {t("survey:noQualityCheckResults")}
         </div>
       </div>
     );
@@ -48,29 +59,41 @@ function Step4Audit() {
     setRegenerating(true);
     try {
       const feedback = evaluations
-        .filter((e) =>
-        e.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM ||
-        e.llm_scores.clarity   < QUALITY_THRESHOLDS.minLLM ||
-        e.llm_scores.neutrality < QUALITY_THRESHOLDS.minLLM ||
-        e.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance ||
-        e.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate ||
-        e.rule_violations.length > 0 ||
-        (e.response_option_issues?.length ?? 0) > 0 ||
-        e.skip_logic_issue ||
-        e.response_scale_issue
-      )
+        .filter(
+          (e) =>
+            e.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM ||
+            e.llm_scores.clarity < QUALITY_THRESHOLDS.minLLM ||
+            e.llm_scores.neutrality < QUALITY_THRESHOLDS.minLLM ||
+            e.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance ||
+            e.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate ||
+            e.rule_violations.length > 0 ||
+            (e.response_option_issues?.length ?? 0) > 0 ||
+            e.skip_logic_issue ||
+            e.response_scale_issue,
+        )
         .map((e) => {
           const problems = [];
-          if (e.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM) problems.push(`low relevance (${e.llm_scores.relevance}/5)`);
-          if (e.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance) problems.push(`doesn't match variable "${e.variable}"`);
-          if (e.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate) problems.push("too similar to another question");
-          if (e.rule_violations.length) problems.push(`rule violations: ${e.rule_violations.join(", ")}`);
-          if (e.llm_scores.clarity < QUALITY_THRESHOLDS.minLLM) problems.push(`low clarity (${e.llm_scores.clarity}/5)`);
-          if (e.llm_scores.neutrality < QUALITY_THRESHOLDS.minLLM) problems.push(`possible bias (${e.llm_scores.neutrality}/5)`);
-          if (e.response_option_issues?.length > 0) problems.push(`option issues: ${e.response_option_issues.join(", ")}`);
+          if (e.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM)
+            problems.push(`${t("survey:lowRelevance")} (${e.llm_scores.relevance}/5)`);
+          if (e.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance)
+            problems.push(`${t("survey:doesntMatchVariable")} "${e.variable}"`);
+          if (e.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate)
+            problems.push(t("survey:tooSimilarToAnotherQuestion"));
+          if (e.rule_violations.length)
+            problems.push(
+              `${t("survey:ruleViolations")}: ${e.rule_violations.join(", ")}`,
+            );
+          if (e.llm_scores.clarity < QUALITY_THRESHOLDS.minLLM)
+            problems.push(`${t("survey:lowClarity")} (${e.llm_scores.clarity}/5)`);
+          if (e.llm_scores.neutrality < QUALITY_THRESHOLDS.minLLM)
+            problems.push(`${t("survey:possibleBias")} (${e.llm_scores.neutrality}/5)`);
+          if (e.response_option_issues?.length > 0)
+            problems.push(
+              `${t("survey:optionIssues")}: ${e.response_option_issues.join(", ")}`,
+            );
           if (e.skip_logic_issue) problems.push(e.skip_logic_issue.issue);
           if (e.response_scale_issue) problems.push(e.response_scale_issue.issue);
-          return `- "${e.question}"\n  Problems: ${problems.join(", ")}`;
+          return `- "${e.question}"\n  ${t("survey:problems")}: ${problems.join(", ")}`;
         })
         .join("\n");
 
@@ -80,10 +103,10 @@ function Step4Audit() {
         body: JSON.stringify({
           surveyDraft: {
             ...surveyDraft,
-            feedback: `The following questions had quality issues and must be improved:\n${feedback}`
+            feedback: `${t("survey:qualityIssuesFeedbackIntro")}\n${feedback}`,
           },
-          variableModel: variableModel.model
-        })
+          variableModel: variableModel.model,
+        }),
       });
 
       const data = await res.json();
@@ -104,13 +127,24 @@ function Step4Audit() {
     setRegenerating(true);
     try {
       const problems = [];
-      if (evaluation.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM) problems.push(`low relevance (${evaluation.llm_scores.relevance}/5)`);
-      if (evaluation.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance) problems.push(`doesn't match variable "${evaluation.variable}"`);
-      if (evaluation.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate) problems.push("too similar to another question");
-      if (evaluation.rule_violations.length) problems.push(`rule violations: ${evaluation.rule_violations.join(", ")}`);
-      if (evaluation.llm_scores.clarity < QUALITY_THRESHOLDS.minLLM) problems.push("low clarity");
-      if (evaluation.llm_scores.neutrality < QUALITY_THRESHOLDS.minLLM) problems.push("possible bias");
-      if (evaluation.response_option_issues?.length > 0) problems.push(`option issues: ${evaluation.response_option_issues.join(", ")}`);
+      if (evaluation.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM)
+        problems.push(`${t("survey:lowRelevance")} (${evaluation.llm_scores.relevance}/5)`);
+      if (evaluation.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance)
+        problems.push(`${t("survey:doesntMatchVariable")} "${evaluation.variable}"`);
+      if (evaluation.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate)
+        problems.push(t("survey:tooSimilarToAnotherQuestion"));
+      if (evaluation.rule_violations.length)
+        problems.push(
+          `${t("survey:ruleViolations")}: ${evaluation.rule_violations.join(", ")}`,
+        );
+      if (evaluation.llm_scores.clarity < QUALITY_THRESHOLDS.minLLM)
+        problems.push(t("survey:lowClarity"));
+      if (evaluation.llm_scores.neutrality < QUALITY_THRESHOLDS.minLLM)
+        problems.push(t("survey:possibleBias"));
+      if (evaluation.response_option_issues?.length > 0)
+        problems.push(
+          `${t("survey:optionIssues")}: ${evaluation.response_option_issues.join(", ")}`,
+        );
       if (evaluation.skip_logic_issue) problems.push(evaluation.skip_logic_issue.issue);
       if (evaluation.response_scale_issue) problems.push(evaluation.response_scale_issue.issue);
 
@@ -120,10 +154,10 @@ function Step4Audit() {
         body: JSON.stringify({
           surveyDraft: {
             ...surveyDraft,
-            feedback: `Regenerate ONLY this one question and keep all others the same:\n- "${evaluation.question}"\n  Assigned variable: "${evaluation.variable}"\n  Problems: ${problems.join(", ")}\n\nFix only this question, return the full question set.`
+            feedback: `${t("survey:regenerateOnlyThisQuestion")}\n- "${evaluation.question}"\n  ${t("survey:assignedVariable")}: "${evaluation.variable}"\n  ${t("survey:problems")}: ${problems.join(", ")}\n\n${t("survey:fixOnlyThisQuestion")}`,
           },
-          variableModel: variableModel.model
-        })
+          variableModel: variableModel.model,
+        }),
       });
 
       const data = await res.json();
@@ -142,18 +176,26 @@ function Step4Audit() {
 
   return (
     <div className="space-y-4">
-      <div className="mono-block inline-block mb-2">[Quality Check (Bias + Validity)]</div>
+      <div className="mono-block inline-block mb-2">
+        [{t("survey:qualityCheckTitle")}]
+      </div>
 
       <div className="flex items-center gap-3 mb-2">
         <div className="text-2xl font-bold text-slate-900">{avgScore}/100</div>
-        <div className={`text-xs px-2 py-1 rounded font-medium ${
-          avgScore >= 80
-            ? "bg-emerald-100 text-emerald-700"
+        <div
+          className={`text-xs px-2 py-1 rounded font-medium ${
+            avgScore >= 80
+              ? "bg-emerald-100 text-emerald-700"
+              : avgScore >= 60
+                ? "bg-amber-100 text-amber-700"
+                : "bg-red-100 text-red-700"
+          }`}
+        >
+          {avgScore >= 80
+            ? t("survey:good")
             : avgScore >= 60
-            ? "bg-amber-100 text-amber-700"
-            : "bg-red-100 text-red-700"
-        }`}>
-          {avgScore >= 80 ? "Good" : avgScore >= 60 ? "Needs Improvement" : "Poor"}
+              ? t("survey:needsImprovement")
+              : t("survey:poor")}
         </div>
 
         {hasIssues && (
@@ -163,13 +205,15 @@ function Step4Audit() {
             disabled={regenerating}
             className="ml-auto inline-flex items-center px-3 py-2 text-xs font-medium rounded bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
           >
-            {regenerating ? "Regenerating…" : "⟳ Regenerate Poor Questions"}
+            {regenerating
+              ? t("survey:regenerating")
+              : t("survey:regeneratePoorQuestions")}
           </button>
         )}
 
         {!hasIssues && (
           <span className="ml-auto text-xs text-emerald-600 font-medium">
-            ✓ All questions passed quality check
+            ✓ {t("survey:allQuestionsPassed")}
           </span>
         )}
       </div>
@@ -177,26 +221,42 @@ function Step4Audit() {
       <div className="space-y-3">
         {evaluations.map((e, i) => {
           const issues = [];
-          if (e.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM) issues.push(`Low topic relevance (${e.llm_scores.relevance}/5)`);
-          if (e.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance) issues.push(`Doesn't match variable "${e.variable}"`);
-          if (e.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate) issues.push("Too similar to another question");
-          if (e.rule_violations.includes("multiple_questions")) issues.push("Contains multiple questions");
-          if (e.rule_violations.includes("too_long")) issues.push("Question too long (>40 words)");
-          if (e.rule_violations.includes("double_negative")) issues.push("Contains double negatives");
-          if (e.rule_violations.includes("vague_language")) issues.push("Uses vague language");
-          if (e.llm_scores.clarity < QUALITY_THRESHOLDS.minLLM) issues.push(`Low clarity (${e.llm_scores.clarity}/5)`);
-          if (e.llm_scores.neutrality < QUALITY_THRESHOLDS.minLLM) issues.push(`Possible bias (${e.llm_scores.neutrality}/5)`);
-          if (e.llm_scores.answerability < QUALITY_THRESHOLDS.minLLM) issues.push(`Hard to answer (${e.llm_scores.answerability}/5)`);
+          if (e.llm_scores.relevance < QUALITY_THRESHOLDS.minLLM)
+            issues.push(`${t("survey:lowTopicRelevance")} (${e.llm_scores.relevance}/5)`);
+          if (e.variable_relevance < QUALITY_THRESHOLDS.minVariableRelevance)
+            issues.push(`${t("survey:doesntMatchVariable")} "${e.variable}"`);
+          if (e.max_duplicate_similarity > QUALITY_THRESHOLDS.maxDuplicate)
+            issues.push(t("survey:tooSimilarToAnotherQuestion"));
+          if (e.rule_violations.includes("multiple_questions"))
+            issues.push(t("survey:containsMultipleQuestions"));
+          if (e.rule_violations.includes("too_long"))
+            issues.push(t("survey:questionTooLong"));
+          if (e.rule_violations.includes("double_negative"))
+            issues.push(t("survey:containsDoubleNegatives"));
+          if (e.rule_violations.includes("vague_language"))
+            issues.push(t("survey:usesVagueLanguage"));
+          if (e.llm_scores.clarity < QUALITY_THRESHOLDS.minLLM)
+            issues.push(`${t("survey:lowClarity")} (${e.llm_scores.clarity}/5)`);
+          if (e.llm_scores.neutrality < QUALITY_THRESHOLDS.minLLM)
+            issues.push(`${t("survey:possibleBias")} (${e.llm_scores.neutrality}/5)`);
+          if (e.llm_scores.answerability < QUALITY_THRESHOLDS.minLLM)
+            issues.push(`${t("survey:hardToAnswer")} (${e.llm_scores.answerability}/5)`);
           if (e.response_option_issues?.length > 0) {
-            e.response_option_issues.forEach(issue => {
-              if (issue === "duplicate_options") issues.push("Duplicate response options");
-              if (issue === "yes_no_mixed_with_other_choices") issues.push("Yes/No mixed with other options");
-              if (issue === "only_one_option") issues.push("Only one response option");
-              if (issue === "no_valid_options") issues.push("No valid response options");
+            e.response_option_issues.forEach((issue) => {
+              if (issue === "duplicate_options")
+                issues.push(t("survey:duplicateResponseOptions"));
+              if (issue === "yes_no_mixed_with_other_choices")
+                issues.push(t("survey:yesNoMixedWithOtherOptions"));
+              if (issue === "only_one_option")
+                issues.push(t("survey:onlyOneResponseOption"));
+              if (issue === "no_valid_options")
+                issues.push(t("survey:noValidResponseOptions"));
             });
           }
-          if (e.skip_logic_issue) issues.push(`Branch logic: ${e.skip_logic_issue.issue}`);
-          if (e.response_scale_issue) issues.push(`Scale issue: ${e.response_scale_issue.issue}`);
+          if (e.skip_logic_issue)
+            issues.push(`${t("survey:branchLogic")}: ${e.skip_logic_issue.issue}`);
+          if (e.response_scale_issue)
+            issues.push(`${t("survey:scaleIssue")}: ${e.response_scale_issue.issue}`);
 
           const isOk = issues.length === 0;
 
@@ -204,16 +264,24 @@ function Step4Audit() {
             <div
               key={i}
               className={`rounded-lg border p-3 text-sm ${
-                isOk ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"
+                isOk
+                  ? "border-emerald-200 bg-emerald-50"
+                  : "border-amber-200 bg-amber-50"
               }`}
             >
               <div className="flex items-start justify-between gap-2 mb-1">
                 <span className="font-medium text-slate-800 text-xs">{e.question}</span>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                    isOk ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                  }`}>
-                    {isOk ? "✓ OK" : `${issues.length} issue${issues.length > 1 ? "s" : ""}`}
+                  <span
+                    className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                      isOk
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-amber-100 text-amber-700"
+                    }`}
+                  >
+                    {isOk
+                      ? `✓ ${t("survey:ok")}`
+                      : `${issues.length} ${issues.length > 1 ? t("survey:issuesPlural") : t("survey:issueSingular")}`}
                   </span>
                   {!isOk && (
                     <button
@@ -221,20 +289,22 @@ function Step4Audit() {
                       disabled={regenerating}
                       onClick={() => handleRegenerateOne(e)}
                       className="text-[10px] px-2 py-0.5 rounded bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
-                      title="Regenerate this question"
+                      title={t("survey:regenerateThisQuestion")}
                     >
-                      {regenerating ? "…" : "⟳"}
+                      {regenerating ? t("survey:loadingDots") : "⟳"}
                     </button>
                   )}
                 </div>
               </div>
 
               <div className="flex gap-3 text-[10px] text-slate-500 mb-1 flex-wrap">
-                <span>Relevance: {e.llm_scores.relevance}/5</span>
-                <span>Var match: {(e.variable_relevance * 100).toFixed(0)}%</span>
-                <span>Clarity: {e.llm_scores.clarity}/5</span>
-                <span>Neutrality: {e.llm_scores.neutrality}/5</span>
-                <span>Readability: {e.readability} ({readabilityLevel(e.readability)})</span>
+                <span>{t("survey:relevance")}: {e.llm_scores.relevance}/5</span>
+                <span>{t("survey:varMatch")}: {(e.variable_relevance * 100).toFixed(0)}%</span>
+                <span>{t("survey:clarity")}: {e.llm_scores.clarity}/5</span>
+                <span>{t("survey:neutrality")}: {e.llm_scores.neutrality}/5</span>
+                <span>
+                  {t("survey:readability")}: {e.readability} ({readabilityLevel(e.readability, t)})
+                </span>
               </div>
 
               {issues.length > 0 && (
