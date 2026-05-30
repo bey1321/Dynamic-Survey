@@ -1,8 +1,7 @@
-import React from "react";
-import SidebarStepper from "./SidebarStepper";
+import SidebarStepper from "../navigation/SidebarStepper";
 import HeaderBar from "./HeaderBar";
 import ToastContainer from "./ToastContainer";
-import { StepNavProvider } from "../state/StepNavContext";
+import { StepNavProvider } from "../../state/StepNavContext";
 
 function Layout({ children }) {
   return (
@@ -26,4 +25,3 @@ function Layout({ children }) {
 }
 
 export default Layout;
-

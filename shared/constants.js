@@ -1,8 +1,9 @@
 export const QUALITY_THRESHOLDS = {
-  // Minimum LLM evaluation score (clarity, neutrality, answerability, relevance)
-  minLLM: 4,
-  // Minimum similarity between question and its assigned variable
+  minLLMAverage: 3.0,              // average of all 4 LLM dimensions must be >= 3.0
+  minLLMCritical: 2,               // any single LLM score below this always triggers regen
   minVariableRelevance: 0.3,
-  // Maximum allowed duplicate similarity
-  maxDuplicate: 0.85
+  minVariableRelevanceControl: 0.2,
+  maxDuplicate: 0.90,
+  minReadability: 20,              // Flesch score (0-100); below 20 = extremely hard to read
+  maxFailRatio: 0.40,              // only regenerate when > 40% of questions have quality issues
 };

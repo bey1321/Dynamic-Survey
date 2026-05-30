@@ -1,68 +1,106 @@
-## Dynamic Survey Prototype
+# Dynamic Survey
 
-Demo-ready web prototype for the **Dynamic Survey Prototype — Step-by-Step Architecture + UI**.
+An AI-assisted survey creation tool that generates variable models and question sets using the Gemini API. Supports multilingual surveys (including Arabic) with a step-by-step creation flow.
 
-### Stack
+## Project Structure
 
-- **Frontend**: React + Vite (JavaScript) + TailwindCSS + React Router
-- **Backend**: Node + Express
-- **Styling**: TailwindCSS
-- **Shared**: Prompt templates and demo data in `shared/`
-
-### Install
-
-From the project root:
-
-```bash
-npm install
+```
+dynamic-survey/
+├── client/      # React + Vite frontend (port 5173 in dev)
+├── server/      # Express API server (port 4000)
+└── shared/      # Constants and demo data shared by both
 ```
 
-This will install root dependencies and run installation for both `client` and `server`.
+## Local Development
 
-### Environment
+### Prerequisites
 
-Optionally set a Gemini API key (for live variable model generation):
+- Node.js 20.6+
+- A [Gemini API key](https://aistudio.google.com/app/apikey)
 
-On Windows PowerShell:
-
-```bash
-$env:GEMINI_API_KEY = "your_api_key_here"
-```
-
-Or via a `.env` file in the `server` folder:
+### Setup
 
 ```bash
-GEMINI_API_KEY=your_api_key_here
-GEMINI_MODEL=gemini-1.5-pro
+# Install all dependencies
+npm run install:all
+
+# Create the server environment file
+cp server/.env.example server/.env   # then fill in your key
 ```
 
-If `GEMINI_API_KEY` is not provided, the server returns a safe fallback demo variable model that matches the specification.
+Add your key to `server/.env`:
 
-### Run (dev)
+```env
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.0-flash
+```
 
-From the project root:
+### Run
 
 ```bash
 npm run dev
 ```
 
-This starts:
+This starts both the client (http://localhost:5173) and the API server (http://localhost:4000) concurrently.
 
-- Express API server on `http://localhost:4000`
-- Vite dev server + React app on `http://localhost:5173`
+---
 
-### Notes
+## Docker
 
-- Routes:
-  - `/step/1-create`
-  - `/step/2-variables`
-  - `/step/3-questions`
-  - `/step/4-audit`
-  - `/step/5-simulation`
-  - `/step/6-preview`
-  - `/step/7-respondent`
-  - `/step/8-dashboard`
-- Default route redirects to `/step/1-create`.
-- Local state and `localStorage` store the survey draft, variable model, and step statuses.
-- **Reset Demo Data** in the top header clears `localStorage` and resets the demo state.
+The Docker image builds the React client at image-build time and serves everything from the single Express server on **port 4000**.
 
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) installed and running
+
+### Build
+
+```bash
+docker build -t dynamic-survey .
+```
+
+This runs a two-stage build: the first stage compiles the React app with Vite, and the second stage assembles the production server image with the compiled assets.
+
+### Run
+
+```bash
+docker run -p 4000:4000 \
+  -e GEMINI_API_KEY=your_key_here \
+  -e GEMINI_MODEL=gemini-2.0-flash \
+  dynamic-survey
+```
+
+Then open **http://localhost:4000** in your browser.
+
+**Never pass your API key in a `.env` file inside the image.** Use `-e` flags or Docker's `--env-file` option at run time:
+
+```bash
+# Using a local env file (keep it out of version control)
+docker run -p 4000:4000 --env-file .env.docker dynamic-survey
+```
+
+Where `.env.docker` contains:
+
+```env
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.0-flash
+NODE_ENV=production
+```
+
+### Optional: Custom Port
+
+```bash
+docker run -p 8080:4000 -e GEMINI_API_KEY=your_key_here dynamic-survey
+# Now available at http://localhost:8080
+```
+
+---
+
+## Environment Variables
+
+| Variable          | Required | Default              | Description                        |
+|-------------------|----------|----------------------|------------------------------------|
+| `GEMINI_API_KEY`  | Yes      | —                    | Google Gemini API key              |
+| `GEMINI_MODEL`    | No       | `gemini-2.0-flash`   | Gemini model to use                |
+| `PORT`            | No       | `4000`               | Port the server listens on         |
+| `NODE_ENV`        | No       | —                    | Set to `production` in Docker      |

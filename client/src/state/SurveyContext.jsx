@@ -12,7 +12,7 @@ const defaultSurveyDraft = {
   population: "",
   confidence: "95",
   margin: "5",
-  language: [],
+  language: "English",
   tone: "Neutral / Government",
   maxQuestions: 10,
   sampleSize: null,
@@ -77,19 +77,16 @@ function loadInitialState() {
 }
 
 export function SurveyProvider({ children }) {
-  const [surveyDraft, setSurveyDraft] = useState(defaultSurveyDraft);
-  const [variableModel, setVariableModel] = useState(defaultVariableModelState);
-  const [questionsState, setQuestionsState] = useState(defaultQuestionsState);
-  const [stepStatus, setStepStatus] = useState(defaultStepStatus);
-  const [evaluations, setEvaluations] = useState(defaultEvaluations);
-  useEffect(() => {
-    const initial = loadInitialState();
-    setSurveyDraft(initial.surveyDraft);
-    setVariableModel(initial.variableModel);
-    setQuestionsState(initial.questionsState);
-    setStepStatus(initial.stepStatus);
-    setEvaluations(initial.evaluations);
-  }, []);
+  // Load from localStorage synchronously via lazy initializers.
+  // This ensures the first render already has the correct state, eliminating
+  // the async race where children would see stale defaults before a useEffect
+  // loaded localStorage — which broke auto-generation on navigation.
+  const [surveyDraft, setSurveyDraft] = useState(() => loadInitialState().surveyDraft);
+  const [variableModel, setVariableModel] = useState(() => loadInitialState().variableModel);
+  const [questionsState, setQuestionsState] = useState(() => loadInitialState().questionsState);
+  const [stepStatus, setStepStatus] = useState(() => loadInitialState().stepStatus);
+  const [evaluations, setEvaluations] = useState(() => loadInitialState().evaluations || []);
+  const [surveyMode, setSurveyMode] = useState("ai");
 
   useEffect(() => {
     const payload = JSON.stringify({
@@ -133,19 +130,45 @@ export function SurveyProvider({ children }) {
     return Math.round(n);
   }
 
-  function saveSurveyDraft(draft) {
+  function saveSurveyDraft(draft, mode = "ai") {
     const sampleSize = computeSampleSize(draft.confidence, draft.margin);
+    // Only invalidate downstream AI results when fields that affect generation change.
+    const generationFields = ["title", "goal", "population", "confidence", "margin", "language", "tone", "maxQuestions"];
+    const configChanged = generationFields.some((k) => draft[k] !== surveyDraft[k]);
     setSurveyDraft({
       ...surveyDraft,
       ...draft,
       sampleSize,
       draftSaved: true
     });
-    setStepStatus((prev) => ({
-      ...prev,
-      1: "completed",
-      2: prev[2] === "locked" ? "unlocked" : prev[2]
-    }));
+    if (configChanged) {
+      setVariableModel(defaultVariableModelState);
+      setQuestionsState(defaultQuestionsState);
+      setEvaluations([]);
+    }
+    if (mode === "scratch") {
+      setStepStatus((prev) => ({
+        ...prev,
+        1: "completed",
+        2: "skipped",
+        3: "unlocked",
+        4: "locked",
+        5: "locked",
+        6: "locked",
+        7: "locked"
+      }));
+    } else {
+      setStepStatus((prev) => ({
+        ...prev,
+        1: "completed",
+        2: "unlocked",
+        3: "locked",
+        4: "locked",
+        5: "locked",
+        6: "locked",
+        7: "locked"
+      }));
+    }
     return sampleSize;
   }
 
@@ -239,6 +262,24 @@ export function SurveyProvider({ children }) {
   }));
   }
 
+  function initScratchMode() {
+    setSurveyMode("scratch");
+    setSurveyDraft(defaultSurveyDraft);
+    setVariableModel(defaultVariableModelState);
+    setQuestionsState(defaultQuestionsState);
+    setEvaluations([]);
+    setStepStatus((prev) => ({
+      ...prev,
+      1: "skipped",
+      2: "skipped",
+      3: "unlocked",
+      4: "locked",
+      5: "locked",
+      6: "locked",
+      7: "locked"
+    }));
+  }
+
   function resetDemoData() {
     setSurveyDraft(defaultSurveyDraft);
     setVariableModel(defaultVariableModelState);
@@ -251,7 +292,7 @@ export function SurveyProvider({ children }) {
   }
 
   function isStepUnlocked(step) {
-    return stepStatus[step] === "unlocked" || stepStatus[step] === "completed";
+    return stepStatus[step] === "unlocked" || stepStatus[step] === "completed" || stepStatus[step] === "skipped";
   }
 
   function hasEvaluationIssues(thresholds = {}) {
@@ -280,7 +321,9 @@ export function SurveyProvider({ children }) {
     questionsState,
     stepStatus,
     globalStatus,
-    evaluations,       
+    evaluations,
+    surveyMode,
+    setSurveyMode,
     setEvaluations,
     saveSurveyDraft,
     loadHealthcareExample,
@@ -290,6 +333,7 @@ export function SurveyProvider({ children }) {
     updateQuestions,
     approveQuestions,
     completeQualityCheck,
+    initScratchMode,
     resetDemoData,
     isStepUnlocked,
     hasEvaluationIssues

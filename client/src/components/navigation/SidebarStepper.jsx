@@ -1,14 +1,11 @@
 import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useSurvey } from "../state/SurveyContext";
+import { useSurvey } from "../../state/SurveyContext";
 
 const steps = [
   { id: 1, label: "STEP 1 — Create Survey (Admin Input)", path: "/step/1-create" },
   { id: 2, label: "STEP 2 — Build Variable Model (AI)", path: "/step/2-variables" },
   { id: 3, label: "STEP 3 — Generate Questions (AI)", path: "/step/3-questions" },
-  { id: 4, label: "STEP 4 — Quality Check (Bias + Validity)", path: "/step/4-audit" },
-  { id: 5, label: "STEP 5 — Simulation (Stress Test + Branching)", path: "/step/5-simulation" },
-  { id: 6, label: "STEP 6 — Final Survey Preview + Export", path: "/step/6-preview" }
 ];
 
 function SidebarStepper() {
@@ -47,4 +44,3 @@ function SidebarStepper() {
 }
 
 export default SidebarStepper;
-

@@ -1,90 +1,4 @@
-export const VARIABLE_MODEL_SYSTEM_PROMPT = `You are an expert survey methodologist and government statistics analyst.
-Return ONLY valid JSON. No markdown. No explanation.`;
-
-export const VARIABLE_MODEL_USER_PROMPT_TEMPLATE = `Generate a survey Variable Model (measurement model) for the following official survey.
-Context:
-- Title: {{title}}
-- Goal: {{goal}}
-- Population: {{population}}
-- Confidence: {{confidence}}%
-- Margin: ±{{margin}}%
-- Language(s): {{language}}
-- Tone: {{tone}}
-- Max questions: {{maxQuestions}}
-
-Output JSON schema (STRICT):
-{
-  "dependent": ["..."],
-  "drivers": ["...", "..."],
-  "controls": ["...", "..."]
-}
-
-Rules:
-- dependent: the main outcome the survey measures (e.g., overall satisfaction score).
-- drivers: measurable factors that influence the dependent variable (5–7 items).
-- controls: demographic/context variables for segmentation (4–6 items).
-- Use neutral, government-appropriate wording.
-- Keep each item short (2–6 words).`;
-
-export function buildVariableModelUserPrompt(input) {
-  const {
-    title = "",
-    goal = "",
-    population = "",
-    confidence = "",
-    margin = "",
-    language = "",
-    tone = "",
-    maxQuestions = ""
-  } = input || {};
-
-  return VARIABLE_MODEL_USER_PROMPT_TEMPLATE
-    .replace("{{title}}", title)
-    .replace("{{goal}}", goal)
-    .replace("{{population}}", population)
-    .replace("{{confidence}}", String(confidence))
-    .replace("{{margin}}", String(margin))
-    .replace("{{language}}", Array.isArray(language) ? language.join(" + ") : String(language))
-    .replace("{{tone}}", tone)
-    .replace("{{maxQuestions}}", String(maxQuestions));
-}
-
-export const SURVEY_CONFIG_SYSTEM_PROMPT = `You are an expert survey methodologist and government statistics analyst.
-Return ONLY valid JSON. No markdown. No explanation.`;
-
-export const SURVEY_CONFIG_USER_PROMPT_TEMPLATE = `Given the following survey specification text, extract the core survey configuration fields.
-
-Text:
-{{text}}
-
-Output JSON schema (STRICT):
-{
-  "title": "...",
-  "goal": "...",
-  "population": "...",
-  "confidence": "90" | "95" | "99",
-  "margin": "3" | "5" | "7",
-  "language": ["English", "Arabic"],
-  "tone": "...",
-  "maxQuestions": 10
-}
-
-Rules:
-- Map any confidence level to the closest of 90, 95, or 99.
-- Map any margin of error to the closest of 3, 5, or 7 (percent).
-- language must be an array of one or both of: "English", "Arabic".
-- tone should be a short description like "Neutral / Government", "Friendly", or "Formal".
-- maxQuestions should be an integer if present, otherwise use a reasonable default (such as 10).
-- If a field is missing in the text, leave it empty or use a sensible default.`;
-
-export function buildSurveyConfigUserPrompt(text) {
-  const safeText = text || "";
-  return SURVEY_CONFIG_USER_PROMPT_TEMPLATE.replace("{{text}}", safeText);
-}
-
-/* ------------------------------------------------------------------ */
-/*  Question Generation Prompt                                        */
-/* ------------------------------------------------------------------ */
+import { getLangStr, fillTemplate } from "./utils.js";
 
 export const QUESTION_GEN_SYSTEM_PROMPT = `You are an expert survey methodologist specialising in questionnaire design for government and institutional research.
 
@@ -177,7 +91,7 @@ Rules for the output:
 • "branchFrom" is either null (unconditional) or the id of the parent question.
 • "branchCondition" is either null or an object with "questionId", "operator", and "value".`;
 
-export const QUESTION_GEN_USER_PROMPT_TEMPLATE = `Generate survey questions for the following survey and variable model.
+const USER_PROMPT_TEMPLATE = `Generate survey questions for the following survey and variable model.
 
 ═══ SURVEY CONFIGURATION ═══
 - Title: {{title}}
@@ -194,36 +108,41 @@ Dependent variable(s): {{dependent}}
 Driver variables: {{drivers}}
 Control variables: {{controls}}
 
+{{previousQuestionsSection}}
+
 Generate up to {{maxQuestions}} questions following the system instructions. Return ONLY the JSON object.`;
 
-export function buildQuestionGenUserPrompt(surveyDraft, variableModel) {
+export function buildQuestionGenUserPrompt(surveyDraft, variableModel, previousQuestions = null) {
   const {
-    title = "",
-    goal = "",
-    population = "",
-    confidence = "",
-    margin = "",
-    language = [],
-    tone = "",
-    maxQuestions = 10
+    title = "", goal = "", population = "", confidence = "",
+    margin = "", language = [], tone = "", maxQuestions = 10,
   } = surveyDraft || {};
 
   const model = variableModel || {};
   const dependent = Array.isArray(model.dependent) ? model.dependent.join(", ") : "";
-  const drivers = Array.isArray(model.drivers) ? model.drivers.join(", ") : "";
-  const controls = Array.isArray(model.controls) ? model.controls.join(", ") : "";
+  const drivers   = Array.isArray(model.drivers)   ? model.drivers.join(", ")   : "";
+  const controls  = Array.isArray(model.controls)  ? model.controls.join(", ")  : "";
 
-  return QUESTION_GEN_USER_PROMPT_TEMPLATE
-    .replace("{{title}}", title)
-    .replace("{{goal}}", goal)
-    .replace("{{population}}", population)
-    .replace("{{confidence}}", String(confidence))
-    .replace("{{margin}}", String(margin))
-    .replace("{{language}}", Array.isArray(language) ? language.join(" + ") : String(language))
-    .replace("{{tone}}", tone)
-    .replace(/\{\{maxQuestions\}\}/g, String(maxQuestions))
-    .replace("{{dependent}}", dependent)
-    .replace("{{drivers}}", drivers)
-    .replace("{{controls}}", controls);
+  const langStr = getLangStr(language);
+
+  let previousQuestionsSection = "";
+  if (Array.isArray(previousQuestions) && previousQuestions.length > 0) {
+    const list = previousQuestions.map(q => `- "${q.text}" (${q.type})`).join("\n");
+    previousQuestionsSection = `═══ IMPORTANT: AVOID THESE PREVIOUS QUESTIONS ═══
+Do NOT regenerate these exact questions. Generate completely different questions with different wording, structure, and approach while measuring the same variables:
+${list}
+
+When regenerating, use alternative phrasings, different question types where possible, and different approaches to measure the same constructs.
+
+`;
+  }
+
+  const langInstruction = langStr === "Arabic"
+    ? "\nIMPORTANT: All question text and answer options MUST be written in Arabic (العربية). Do not use English anywhere in the questions or options."
+    : "";
+
+  return fillTemplate(USER_PROMPT_TEMPLATE, {
+    title, goal, population, confidence, margin, language: langStr,
+    tone, maxQuestions, dependent, drivers, controls, previousQuestionsSection,
+  }).concat(langInstruction);
 }
-
