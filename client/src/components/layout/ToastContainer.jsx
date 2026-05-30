@@ -1,5 +1,5 @@
 import React from "react";
-import { useToast } from "../state/ToastContext";
+import { useToast } from "../../state/ToastContext";
 
 function ToastContainer() {
   const { toast } = useToast();
@@ -16,4 +16,3 @@ function ToastContainer() {
 }
 
 export default ToastContainer;
-

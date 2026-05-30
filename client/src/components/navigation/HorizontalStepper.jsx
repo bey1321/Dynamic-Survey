@@ -1,14 +1,11 @@
 import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useSurvey } from "../state/SurveyContext";
+import { useSurvey } from "../../state/SurveyContext";
 
 const STEPS = [
   { id: 1, label: "Create",     path: "/survey/step/1-create"     },
   { id: 2, label: "Variables",  path: "/survey/step/2-variables"  },
   { id: 3, label: "Questions",  path: "/survey/step/3-questions"  },
-//  { id: 4, label: "Audit",      path: "/survey/step/4-audit"      },
-//  { id: 5, label: "Simulation", path: "/survey/step/5-simulation" },
-//  { id: 6, label: "Preview",    path: "/survey/step/6-preview"    },
 ];
 
 const BRAND = {

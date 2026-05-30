@@ -1,20 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronRight, Send, Trash2 } from 'lucide-react';
-import { useSurvey } from '../state/SurveyContext';
-import { useToast } from '../state/ToastContext';
-import { ChatMessage } from './ChatMessage';
+import { useSurvey } from '../../state/SurveyContext';
+import { useToast } from '../../state/ToastContext';
+import { ChatMessage } from '../chat/ChatMessage';
 
 export const QuestionEditorSidebar = ({ questions = [], evaluations = [], onCollapse }) => {
   const { surveyDraft, variableModel, questionsState, setQuestionsFromAI } = useSurvey();
   const { showToast } = useToast();
 
-  // Separate chat state for sidebar (independent from floating chat)
   const [sidebarMessages, setSidebarMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom when messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [sidebarMessages]);
@@ -26,7 +24,6 @@ export const QuestionEditorSidebar = ({ questions = [], evaluations = [], onColl
     const userInput = input.trim();
     setInput('');
 
-    // Add user message to sidebar chat
     const userMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -37,7 +34,6 @@ export const QuestionEditorSidebar = ({ questions = [], evaluations = [], onColl
     setIsLoading(true);
 
     try {
-      // Make direct API call for sidebar chat (separate from floating chat)
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -61,7 +57,6 @@ export const QuestionEditorSidebar = ({ questions = [], evaluations = [], onColl
 
       const data = await response.json();
 
-      // Add assistant message to sidebar chat
       const assistantMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -70,7 +65,6 @@ export const QuestionEditorSidebar = ({ questions = [], evaluations = [], onColl
       };
       setSidebarMessages((prev) => [...prev, assistantMessage]);
 
-      // Handle question regeneration if applicable
       if (data?.regeneratedQuestions) {
         setQuestionsFromAI(data.regeneratedQuestions);
         showToast('Questions regenerated!');

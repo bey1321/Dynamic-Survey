@@ -26,12 +26,7 @@ function Step1CreateSurvey() {
   function handleChange(e) {
     const { name, value, type } = e.target;
     if (name === "language") {
-      const lang = value;
-      const hasLang = form.language.includes(lang);
-      const next = hasLang
-        ? form.language.filter((l) => l !== lang)
-        : [...form.language, lang];
-      setForm((prev) => ({ ...prev, language: next }));
+      setForm((prev) => ({ ...prev, language: value }));
       return;
     }
     if (name === "maxQuestions") {
@@ -64,19 +59,16 @@ function Step1CreateSurvey() {
     const file = e.target.files && e.target.files[0] ? e.target.files[0] : null;
     setUploadFile(file);
     setExtractError("");
+    if (file) extractFromFile(file);
   }
 
-  function handleExtractFromFile() {
-    if (!uploadFile) {
-      setExtractError(t("survey:chooseFileFirst"));
-      return;
-    }
+  function extractFromFile(file) {
     setExtractError("");
     setExtracting(true);
 
     const isPdf =
-      uploadFile.type === "application/pdf" ||
-      uploadFile.name.toLowerCase().endsWith(".pdf");
+      file.type === "application/pdf" ||
+      file.name.toLowerCase().endsWith(".pdf");
     const reader = new FileReader();
     reader.onload = function () {
       let content = "";
@@ -90,15 +82,11 @@ function Step1CreateSurvey() {
       }
       fetch("/api/extract-survey-config", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, isPdf: isPdfFlag }),
       })
         .then(async (res) => {
-          if (!res.ok) {
-            throw new Error("Extraction request failed");
-          }
+          if (!res.ok) throw new Error("Extraction request failed");
           return res.json();
         })
         .then((data) => {
@@ -111,6 +99,8 @@ function Step1CreateSurvey() {
             margin: data.margin || prev.margin,
             language:
               Array.isArray(data.language) && data.language.length > 0
+                ? data.language[0]
+                : typeof data.language === "string" && data.language
                 ? data.language
                 : prev.language,
             tone: data.tone || prev.tone,
@@ -134,9 +124,9 @@ function Step1CreateSurvey() {
     };
 
     if (isPdf) {
-      reader.readAsDataURL(uploadFile);
+      reader.readAsDataURL(file);
     } else {
-      reader.readAsText(uploadFile);
+      reader.readAsText(file);
     }
   }
 
@@ -300,7 +290,7 @@ function Step1CreateSurvey() {
             </div>
           </div>
 
-          {/* Language checkboxes */}
+          {/* Language radio buttons */}
           <div>
             <label className={labelCls} style={{ color: "#1B6B8A" }}>
               {t("common:language")}
@@ -316,34 +306,27 @@ function Step1CreateSurvey() {
                 >
                   <div className="relative flex items-center">
                     <input
-                      type="checkbox"
+                      type="radio"
                       name="language"
                       value={lang.value}
-                      checked={form.language.includes(lang.value)}
+                      checked={form.language === lang.value}
                       onChange={handleChange}
                       className="sr-only"
                     />
                     <div
-                      className="w-5 h-5 rounded flex items-center justify-center border-2 transition-colors duration-200"
+                      className="w-5 h-5 rounded-full flex items-center justify-center border-2 transition-colors duration-200"
                       style={{
-                        borderColor: form.language.includes(lang.value)
+                        borderColor: form.language === lang.value
                           ? "#1B6B8A"
                           : "#b0d4dc",
-                        backgroundColor: form.language.includes(lang.value)
-                          ? "#1B6B8A"
-                          : "white",
+                        backgroundColor: "white",
                       }}
                     >
-                      {form.language.includes(lang.value) && (
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                          <path
-                            d="M1.5 5L4 7.5L8.5 2.5"
-                            stroke="white"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
+                      {form.language === lang.value && (
+                        <div
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: "#1B6B8A" }}
+                        />
                       )}
                     </div>
                   </div>
@@ -372,38 +355,53 @@ function Step1CreateSurvey() {
               className="flex items-center gap-2 cursor-pointer text-sm px-4 py-2 rounded-lg border transition-colors duration-200"
               style={{ borderColor: "#b0d4dc", color: "#1B6B8A" }}
             >
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              {uploadFile ? uploadFile.name : t("survey:chooseFile")}
+              {extracting ? (
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="animate-spin"
+                >
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+              ) : (
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+              )}
+              {extracting
+                ? t("survey:extracting")
+                : uploadFile
+                ? uploadFile.name
+                : t("survey:chooseFile")}
               <input
                 type="file"
-                accept=".pdf,.txt,.md,.csv"
+                accept=".pdf,.txt"
                 onChange={handleFileChange}
+                disabled={extracting}
                 className="sr-only"
               />
             </label>
-            <button
-              type="button"
-              onClick={handleExtractFromFile}
-              disabled={extracting}
-              className="text-sm font-semibold px-4 py-2 rounded-lg text-white transition-colors duration-200 disabled:opacity-50"
-              style={{ backgroundColor: "#2AABBA" }}
-            >
-              {extracting ? t("survey:extracting") : t("survey:extractDetails")}
-            </button>
           </div>
+          <p className="text-xs" style={{ color: "#7ab3c0" }}>
+            {t("survey:acceptedFormats")}
+          </p>
           {extractError && (
             <p className="text-xs font-medium text-red-500 flex items-center gap-1">
               <span>⚠</span> {extractError}
@@ -422,10 +420,11 @@ function Step1CreateSurvey() {
         <div className="flex items-center justify-end pt-2">
           <button
             type="submit"
-            className="flex items-center gap-2 text-sm font-bold px-6 py-3 rounded-full text-white shadow-md transition-colors duration-200"
+            disabled={extracting}
+            className="flex items-center gap-2 text-sm font-bold px-6 py-3 rounded-full text-white shadow-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: "#1B6B8A" }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = "#2AABBA";
+              if (!extracting) e.currentTarget.style.backgroundColor = "#2AABBA";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = "#1B6B8A";

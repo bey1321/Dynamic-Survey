@@ -1,0 +1,23 @@
+# Dependencies — rebuilt inside the image
+**/node_modules
+
+# Build artifacts — client is built inside the image
+client/dist
+
+# Local environment files — pass secrets via docker run -e or --env-file
+**/.env
+**/.env.*
+
+# Version control
+.git
+.gitignore
+
+# Editor / OS noise
+.vscode
+.idea
+*.log
+.DS_Store
+Thumbs.db
+
+# Development-only files
+server/tmpclaude-*

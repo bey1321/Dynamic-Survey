@@ -1,10 +1,9 @@
 import { useNavigate } from "react-router-dom";
-import { useSurvey } from "../state/SurveyContext";
-import { StepNavProvider } from "../state/StepNavContext";
-import HorizontalStepper from "./HorizontalStepper";
+import { useSurvey } from "../../state/SurveyContext";
+import { StepNavProvider } from "../../state/StepNavContext";
+import HorizontalStepper from "../navigation/HorizontalStepper";
 import ToastContainer from "./ToastContainer";
-import { ChatSidebar } from "./ChatSidebar";
-import rakscLogo from "../assets/raksc-logo.png";
+import rakscLogo from "../../assets/raksc-logo.png";
 import { useTranslation } from "react-i18next";
 
 function LayoutClean({ children }) {
@@ -107,7 +106,6 @@ function LayoutClean({ children }) {
       />
 
       <ToastContainer />
-      <ChatSidebar />
     </div>
   );
 }
