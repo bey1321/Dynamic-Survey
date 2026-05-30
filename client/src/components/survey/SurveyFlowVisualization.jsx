@@ -13,7 +13,6 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-// Custom node component for question nodes
 function QuestionNode({ data }) {
   return (
     <>
@@ -38,7 +37,6 @@ function QuestionNode({ data }) {
   );
 }
 
-// Custom node component for start node
 function StartNode({ data }) {
   return (
     <>
@@ -53,7 +51,6 @@ function StartNode({ data }) {
   );
 }
 
-// Custom node types (defined outside component to avoid re-registration)
 const nodeTypes = {
   question: QuestionNode,
   start: StartNode,
@@ -133,7 +130,6 @@ export function SurveyFlowVisualization({ questions }) {
     const xCenter = 400;
     const nodeSpacing = 180;
 
-    // Add start node
     nodes.push({
       id: "start",
       type: "start",
@@ -146,7 +142,6 @@ export function SurveyFlowVisualization({ questions }) {
 
     yOffset += nodeSpacing;
 
-    // Create nodes for each question
     questions.forEach((question, index) => {
       const hasConditional = question.branchCondition !== null;
       const isBranchedTo = question.branchFrom !== null;

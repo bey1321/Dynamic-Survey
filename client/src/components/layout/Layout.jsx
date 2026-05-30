@@ -1,8 +1,7 @@
-import SidebarStepper from "./SidebarStepper";
+import SidebarStepper from "../navigation/SidebarStepper";
 import HeaderBar from "./HeaderBar";
 import ToastContainer from "./ToastContainer";
-import { ChatSidebar } from "./ChatSidebar";
-import { StepNavProvider } from "../state/StepNavContext";
+import { StepNavProvider } from "../../state/StepNavContext";
 
 function Layout({ children }) {
   return (
@@ -21,7 +20,6 @@ function Layout({ children }) {
         </main>
       </div>
       <ToastContainer />
-      <ChatSidebar />
     </div>
   );
 }

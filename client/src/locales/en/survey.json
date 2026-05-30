@@ -22,6 +22,7 @@
   "extractDetails": "Extract Details",
   "extracting": "Extracting…",
   "fillRequiredFields": "Please fill in Title, Goal, and Population.",
+  "acceptedFormats": "Accepted formats: PDF, TXT — max 20 MB",
   "chooseFileFirst": "Please choose a file to upload.",
   "extractFailed": "Failed to extract survey details from file.",
   "readFileFailed": "Unable to read the selected file.",

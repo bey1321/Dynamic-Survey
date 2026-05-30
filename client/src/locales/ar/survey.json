@@ -22,6 +22,7 @@
   "extractDetails": "استخراج التفاصيل",
   "extracting": "جارٍ الاستخراج…",
   "fillRequiredFields": "يرجى تعبئة العنوان والهدف والفئة المستهدفة.",
+  "acceptedFormats": "الصيغ المقبولة: PDF، TXT — الحد الأقصى 20 ميغابايت",
   "chooseFileFirst": "يرجى اختيار ملف للرفع.",
   "extractFailed": "فشل في استخراج تفاصيل الاستبيان من الملف.",
   "readFileFailed": "تعذر قراءة الملف المحدد.",

@@ -12,7 +12,7 @@ const defaultSurveyDraft = {
   population: "",
   confidence: "95",
   margin: "5",
-  language: [],
+  language: "English",
   tone: "Neutral / Government",
   maxQuestions: 10,
   sampleSize: null,
@@ -132,17 +132,20 @@ export function SurveyProvider({ children }) {
 
   function saveSurveyDraft(draft, mode = "ai") {
     const sampleSize = computeSampleSize(draft.confidence, draft.margin);
+    // Only invalidate downstream AI results when fields that affect generation change.
+    const generationFields = ["title", "goal", "population", "confidence", "margin", "language", "tone", "maxQuestions"];
+    const configChanged = generationFields.some((k) => draft[k] !== surveyDraft[k]);
     setSurveyDraft({
       ...surveyDraft,
       ...draft,
       sampleSize,
       draftSaved: true
     });
-    // Clear all downstream results — survey config changed so previous
-    // generation is stale. This ensures Step 2/3 always generate fresh.
-    setVariableModel(defaultVariableModelState);
-    setQuestionsState(defaultQuestionsState);
-    setEvaluations([]);
+    if (configChanged) {
+      setVariableModel(defaultVariableModelState);
+      setQuestionsState(defaultQuestionsState);
+      setEvaluations([]);
+    }
     if (mode === "scratch") {
       setStepStatus((prev) => ({
         ...prev,

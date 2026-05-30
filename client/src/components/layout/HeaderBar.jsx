@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { useSurvey } from "../state/SurveyContext";
+import { useSurvey } from "../../state/SurveyContext";
 
 function HeaderBar() {
   const { surveyDraft, globalStatus, resetDemoData } = useSurvey();
@@ -45,4 +45,3 @@ function HeaderBar() {
 }
 
 export default HeaderBar;
-

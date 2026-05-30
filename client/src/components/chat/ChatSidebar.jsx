@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Send, Loader, Trash2 } from 'lucide-react';
-import { useChat } from '../state/ChatContext';
-import { useSurvey } from '../state/SurveyContext';
-import { useToast } from '../state/ToastContext';
+import { useChat } from '../../state/ChatContext';
+import { useSurvey } from '../../state/SurveyContext';
+import { useToast } from '../../state/ToastContext';
 import { ChatMessage } from './ChatMessage';
 
 export const ChatSidebar = () => {

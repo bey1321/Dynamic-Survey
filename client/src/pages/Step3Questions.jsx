@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useSurvey } from "../state/SurveyContext";
 import { useToast } from "../state/ToastContext";
 import { useChat } from "../state/ChatContext";
-import { SurveyFlowVisualization } from "../components/SurveyFlowVisualization";
+import { SurveyFlowVisualization } from "../components/survey/SurveyFlowVisualization";
 import {
   List,
   Eye,
