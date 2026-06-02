@@ -4,10 +4,8 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
-// ── Users ─────────────────────────────────────────────────────────────────────
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
@@ -26,7 +24,6 @@ model User {
   @@map("users")
 }
 
-// ── Surveys ───────────────────────────────────────────────────────────────────
 model Survey {
   id          String       @id @default(uuid())
   ownerId     String       @map("owner_id")
@@ -51,16 +48,12 @@ enum SurveyStatus {
   ARCHIVED
 }
 
-// ── Snapshot Versions ─────────────────────────────────────────────────────────
-// Each row is a full point-in-time copy of the entire survey state.
-// versionNumber increments per survey: 1, 2, 3 ...
-// Nothing is ever overwritten — restoring creates a new row.
 model SurveyVersion {
   id            String   @id @default(uuid())
   surveyId      String   @map("survey_id")
   versionNumber Int      @map("version_number")
-  label         String?  // optional human label e.g. "After ethics review"
-  snapshot      Json     // full survey state: draft, config, variableModel, questions, evalResults
+  label         String?
+  snapshot      Json
   createdBy     String   @map("created_by")
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -71,16 +64,13 @@ model SurveyVersion {
   @@map("survey_versions")
 }
 
-// ── Share Links ───────────────────────────────────────────────────────────────
-// A 64-char random token that grants access without requiring an account.
-// Can be VIEW or EDIT, and can optionally expire.
 model SurveyShare {
   id         String          @id @default(uuid())
   surveyId   String          @map("survey_id")
   shareToken String          @unique @map("share_token")
   permission SharePermission @default(VIEW)
   createdBy  String          @map("created_by")
-  expiresAt  DateTime?       @map("expires_at") // null = never expires
+  expiresAt  DateTime?       @map("expires_at")
   isActive   Boolean         @default(true) @map("is_active")
   createdAt  DateTime        @default(now()) @map("created_at")
 
@@ -90,8 +80,6 @@ model SurveyShare {
   @@map("survey_shares")
 }
 
-// ── Collaborators ─────────────────────────────────────────────────────────────
-// Direct user-to-user access grants on a specific survey.
 model SurveyCollaborator {
   surveyId   String          @map("survey_id")
   userId     String          @map("user_id")

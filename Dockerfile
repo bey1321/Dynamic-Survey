@@ -1,5 +1,5 @@
 # ─── Stage 1: Build the React client ────────────────────────────────────────
-FROM node:20-alpine AS client-builder
+FROM node:22-bookworm-slim AS client-builder
 WORKDIR /app
 
 # Copy workspace root (needed for the "file:.." shared dependency)
@@ -15,19 +15,22 @@ COPY client/ ./client/
 RUN npm run build --prefix client
 
 # ─── Stage 2: Production server ──────────────────────────────────────────────
-FROM node:20-alpine
+FROM node:22-bookworm-slim
 WORKDIR /app
 
 # Copy workspace root and shared module
 COPY package.json ./
 COPY shared/ ./shared/
 
-# Install server dependencies (production only)
+# Install server production dependencies
 COPY server/package.json server/package-lock.json ./server/
-RUN npm install --prefix server --omit=dev
+RUN npm install --prefix server
 
-# Copy server source
+# Copy server source (includes prisma/ schema and prisma.config.ts)
 COPY server/ ./server/
+
+# Generate Prisma Client
+RUN cd /app/server && npx prisma generate
 
 # Copy built client assets from Stage 1
 COPY --from=client-builder /app/client/dist ./client/dist
@@ -38,5 +41,5 @@ ENV NODE_ENV=production
 
 WORKDIR /app/server
 
-# Use node directly so Docker env vars are picked up (no --env-file needed)
-CMD ["node", "index.js"]
+# Run migrations then start — DATABASE_URL is injected by docker-compose at runtime
+CMD ["sh", "-c", "npx prisma migrate deploy && node index.js"]

@@ -2,8 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 
 const AuthContext = createContext(null)
 
-const TOKEN_KEY   = 'ds_auth_token'
-const DB_BASE_URL = import.meta.env.VITE_DB_SERVICE_URL || 'http://localhost:5000'
+const TOKEN_KEY = 'ds_auth_token'
 
 export const AuthProvider = ({ children }) => {
   const [user,    setUser]    = useState(null)
@@ -14,7 +13,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!token) { setLoading(false); return }
 
-    fetch(`${DB_BASE_URL}/api/auth/me`, {
+    fetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => (r.ok ? r.json() : Promise.reject()))
@@ -33,7 +32,7 @@ export const AuthProvider = ({ children }) => {
   }
 
   const login = useCallback(async (email, password) => {
-    const res = await fetch(`${DB_BASE_URL}/api/auth/login`, {
+    const res = await fetch('/api/auth/login', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ email, password }),
@@ -45,7 +44,7 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   const register = useCallback(async (email, username, password) => {
-    const res = await fetch(`${DB_BASE_URL}/api/auth/register`, {
+    const res = await fetch('/api/auth/register', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ email, username, password }),

@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { randomUUID } from 'crypto'
 import pool from '../services/db.js'
 import { authenticate } from '../middleware/auth.js'
 
@@ -16,7 +17,7 @@ const hasAccess = async (surveyId, userId) => {
   return rows.length > 0
 }
 
-// ── GET /api/surveys/:id/versions ─────────────────────────────────────────────
+// GET /api/surveys/:id/versions
 router.get('/', async (req, res) => {
   try {
     if (!(await hasAccess(req.params.id, req.user.id)))
@@ -38,7 +39,7 @@ router.get('/', async (req, res) => {
   }
 })
 
-// ── GET /api/surveys/:id/versions/:versionId ──────────────────────────────────
+// GET /api/surveys/:id/versions/:versionId
 router.get('/:versionId', async (req, res) => {
   try {
     if (!(await hasAccess(req.params.id, req.user.id)))
@@ -60,11 +61,10 @@ router.get('/:versionId', async (req, res) => {
   }
 })
 
-// ── POST /api/surveys/:id/versions/:versionId/restore ─────────────────────────
+// POST /api/surveys/:id/versions/:versionId/restore
 router.post('/:versionId/restore', async (req, res) => {
   const client = await pool.connect()
   try {
-    // Check edit access
     const { rows: access } = await client.query(
       `SELECT id FROM surveys WHERE id = $1
          AND (owner_id = $2 OR EXISTS (
@@ -76,14 +76,12 @@ router.post('/:versionId/restore', async (req, res) => {
     if (!access[0])
       return res.status(404).json({ error: 'Survey not found or insufficient permissions' })
 
-    // Get the version to restore
     const { rows: target } = await client.query(
       'SELECT * FROM survey_versions WHERE id = $1 AND survey_id = $2',
       [req.params.versionId, req.params.id]
     )
     if (!target[0]) return res.status(404).json({ error: 'Version not found' })
 
-    // Get the current max version number
     const { rows: maxRows } = await client.query(
       'SELECT COALESCE(MAX(version_number), 0) AS max FROM survey_versions WHERE survey_id = $1',
       [req.params.id]
@@ -92,9 +90,10 @@ router.post('/:versionId/restore', async (req, res) => {
 
     await client.query('BEGIN')
     const { rows } = await client.query(
-      `INSERT INTO survey_versions (survey_id, version_number, label, snapshot, created_by)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      `INSERT INTO survey_versions (id, survey_id, version_number, label, snapshot, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [
+        randomUUID(),
         req.params.id,
         nextVersion,
         `Restored from v${target[0].version_number}`,

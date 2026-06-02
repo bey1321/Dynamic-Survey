@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { useSurvey } from "../state/SurveyContext";
 import { useToast } from "../state/ToastContext";
 import { useChat } from "../state/ChatContext";
+import { useAuth } from "../state/AuthContext";
+import { createSurveyApi } from "../services/api";
 import { SurveyFlowVisualization } from "../components/survey/SurveyFlowVisualization";
 import {
   List,
@@ -15,6 +17,7 @@ import {
   MessageSquare,
   X,
   Sparkles,
+  Save,
 } from "lucide-react";
 
 const QUESTION_TYPES = [
@@ -52,12 +55,16 @@ function Step3Questions() {
     evaluations,
     approveQuestions,
     surveyMode,
+    savedSurveyId,
+    setSavedSurveyId,
   } = useSurvey();
   const { showToast } = useToast();
   const { updateConversationContext } = useChat();
+  const { isAuthenticated, token } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [narrationStages, setNarrationStages] = useState([]);
   const [showModifyModal, setShowModifyModal] = useState(false);
   const pendingRef = useRef(false);
@@ -157,7 +164,7 @@ function Step3Questions() {
         if (event.type === "stage") {
           setNarrationStages((prev) => [
             ...prev,
-            { stage: event.stage, message: event.message },
+            { stageKey: event.stageKey, params: event.params || {} },
           ]);
         } else if (event.type === "done") {
           finalData = event;
@@ -273,6 +280,41 @@ function Step3Questions() {
     } finally {
       setLoading(false);
       setNarrationStages([]);
+    }
+  }
+
+  async function handleSave() {
+    if (!questions || questions.length === 0) {
+      showToast("Generate questions before saving.");
+      return;
+    }
+    if (!isAuthenticated) {
+      showToast("Sign in to save your survey.");
+      navigate("/login");
+      return;
+    }
+    setSaving(true);
+    try {
+      const api = createSurveyApi(token);
+      const snapshot = { surveyDraft, variableModel: variableModel.model, questions };
+      const params = {
+        title: surveyDraft.title || "Untitled Survey",
+        description: surveyDraft.goal || null,
+        language: surveyDraft.language?.toLowerCase().startsWith("ar") ? "ar" : "en",
+        snapshot,
+      };
+      if (savedSurveyId) {
+        await api.updateSurvey(savedSurveyId, params);
+      } else {
+        const created = await api.createSurvey(params);
+        if (created?.id) setSavedSurveyId(created.id);
+      }
+      showToast("Survey saved successfully.");
+    } catch (err) {
+      console.error("Save failed:", err);
+      showToast(`Failed to save: ${err.message}`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -516,6 +558,19 @@ function Step3Questions() {
                 >
                   {t("survey:addQuestion")}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={!questions || questions.length === 0 || loading || saving}
+                  className="text-xs font-bold px-4 py-2 rounded-full text-white flex items-center gap-1.5 transition-colors duration-200 disabled:opacity-40 ml-auto"
+                  style={{ backgroundColor: "#1B6B8A" }}
+                  onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = "#2AABBA"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "#1B6B8A"; }}
+                >
+                  {saving ? <Loader size={13} className="animate-spin" /> : <Save size={13} />}
+                  {saving ? "Saving…" : "Save Survey"}
+                </button>
               </div>
 
               {loading && (
@@ -542,9 +597,9 @@ function Step3Questions() {
                             </span>
                             <span>
                               <span className="font-semibold" style={{ color: "#1B6B8A" }}>
-                                [{t("survey:stageLabel")}: {s.stage}]
+                                [{t("survey:stageLabel")}: {t(`survey:stageName.${s.stageKey}`)}]
                               </span>{" "}
-                              <span style={{ color: "#536b6e" }}>{s.message}</span>
+                              <span style={{ color: "#536b6e" }}>{t(`survey:stageMsg.${s.stageKey}`, s.params)}</span>
                             </span>
                           </div>
                         );

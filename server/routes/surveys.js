@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { randomUUID } from 'crypto'
 import pool from '../services/db.js'
 import { authenticate } from '../middleware/auth.js'
 
 const router = Router()
 router.use(authenticate)
 
-// ── GET /api/surveys ──────────────────────────────────────────────────────────
+// GET /api/surveys
 router.get('/', async (req, res) => {
   try {
     const { rows: owned } = await pool.query(
@@ -44,7 +45,7 @@ router.get('/', async (req, res) => {
   }
 })
 
-// ── POST /api/surveys ─────────────────────────────────────────────────────────
+// POST /api/surveys
 router.post('/', async (req, res) => {
   const { title, description, language, snapshot } = req.body
   if (!snapshot) return res.status(400).json({ error: 'snapshot is required' })
@@ -52,16 +53,17 @@ router.post('/', async (req, res) => {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    const surveyId = randomUUID()
     const { rows } = await client.query(
-      `INSERT INTO surveys (owner_id, title, description, language)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.user.id, title?.trim() || 'Untitled Survey', description?.trim() ?? null, language || 'en']
+      `INSERT INTO surveys (id, owner_id, title, description, language, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING *`,
+      [surveyId, req.user.id, title?.trim() || 'Untitled Survey', description?.trim() ?? null, language || 'en']
     )
     const survey = rows[0]
     await client.query(
-      `INSERT INTO survey_versions (survey_id, version_number, label, snapshot, created_by)
-       VALUES ($1, 1, 'Initial save', $2, $3)`,
-      [survey.id, JSON.stringify(snapshot), req.user.id]
+      `INSERT INTO survey_versions (id, survey_id, version_number, label, snapshot, created_by)
+       VALUES ($1, $2, 1, 'Initial save', $3, $4)`,
+      [randomUUID(), survey.id, JSON.stringify(snapshot), req.user.id]
     )
     await client.query('COMMIT')
     res.status(201).json(survey)
@@ -74,7 +76,7 @@ router.post('/', async (req, res) => {
   }
 })
 
-// ── GET /api/surveys/:id ──────────────────────────────────────────────────────
+// GET /api/surveys/:id
 router.get('/:id', async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -83,7 +85,8 @@ router.get('/:id', async (req, res) => {
          (SELECT row_to_json(v) FROM (
            SELECT * FROM survey_versions WHERE survey_id = s.id ORDER BY version_number DESC LIMIT 1
          ) v) AS latest_version,
-         (SELECT COUNT(*) FROM survey_versions WHERE survey_id = s.id)::int AS version_count
+         (SELECT COUNT(*) FROM survey_versions WHERE survey_id = s.id)::int AS version_count,
+         (SELECT permission FROM survey_collaborators WHERE survey_id = s.id AND user_id = $2) AS my_permission
        FROM surveys s
        JOIN (SELECT id, username, email FROM users) u ON u.id = s.owner_id
        WHERE s.id = $1
@@ -100,13 +103,12 @@ router.get('/:id', async (req, res) => {
   }
 })
 
-// ── PUT /api/surveys/:id ──────────────────────────────────────────────────────
+// PUT /api/surveys/:id
 router.put('/:id', async (req, res) => {
   const { title, description, status, language, snapshot, versionLabel } = req.body
 
   const client = await pool.connect()
   try {
-    // Verify access
     const { rows: access } = await client.query(
       `SELECT s.id,
          COALESCE(
@@ -144,9 +146,9 @@ router.put('/:id', async (req, res) => {
     if (snapshot) {
       const nextVersion = access[0].max_version + 1
       await client.query(
-        `INSERT INTO survey_versions (survey_id, version_number, label, snapshot, created_by)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [req.params.id, nextVersion, versionLabel?.trim() || null, JSON.stringify(snapshot), req.user.id]
+        `INSERT INTO survey_versions (id, survey_id, version_number, label, snapshot, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [randomUUID(), req.params.id, nextVersion, versionLabel?.trim() || null, JSON.stringify(snapshot), req.user.id]
       )
     }
 
@@ -161,7 +163,7 @@ router.put('/:id', async (req, res) => {
   }
 })
 
-// ── DELETE /api/surveys/:id ───────────────────────────────────────────────────
+// DELETE /api/surveys/:id
 router.delete('/:id', async (req, res) => {
   try {
     const { rowCount } = await pool.query(

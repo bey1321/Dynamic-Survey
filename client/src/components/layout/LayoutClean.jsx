@@ -1,14 +1,17 @@
 import { useNavigate } from "react-router-dom";
 import { useSurvey } from "../../state/SurveyContext";
+import { useAuth } from "../../state/AuthContext";
 import { StepNavProvider } from "../../state/StepNavContext";
 import HorizontalStepper from "../navigation/HorizontalStepper";
 import ToastContainer from "./ToastContainer";
+import ProfileDropdown from "../ProfileDropdown";
 import rakscLogo from "../../assets/raksc-logo.png";
 import { useTranslation } from "react-i18next";
 
 function LayoutClean({ children }) {
   const navigate = useNavigate();
   const { surveyDraft, globalStatus, surveyMode } = useSurvey();
+  const { isAuthenticated } = useAuth();
   const { t, i18n } = useTranslation("common");
 
   const title =
@@ -50,35 +53,39 @@ function LayoutClean({ children }) {
           </span>
         </div>
 
-        {/* Language toggle */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => i18n.changeLanguage("en")}
-            className={`px-3 py-1 rounded text-sm font-medium border ${
-              i18n.language === "en" ? "text-white" : "text-[#1B6B8A]"
-            }`}
-            style={{
-              backgroundColor: i18n.language === "en" ? "#1B6B8A" : "#ffffff",
-              borderColor: "#b0d4dc",
-            }}
-          >
-            {t("english")}
-          </button>
+        {/* Language toggle + profile */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => i18n.changeLanguage("en")}
+              className={`px-3 py-1 rounded text-sm font-medium border ${
+                i18n.language === "en" ? "text-white" : "text-[#1B6B8A]"
+              }`}
+              style={{
+                backgroundColor: i18n.language === "en" ? "#1B6B8A" : "#ffffff",
+                borderColor: "#b0d4dc",
+              }}
+            >
+              {t("english")}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => i18n.changeLanguage("ar")}
-            className={`px-3 py-1 rounded text-sm font-medium border ${
-              i18n.language === "ar" ? "text-white" : "text-[#1B6B8A]"
-            }`}
-            style={{
-              backgroundColor: i18n.language === "ar" ? "#1B6B8A" : "#ffffff",
-              borderColor: "#b0d4dc",
-            }}
-          >
-            {t("arabic")}
-          </button>
+            <button
+              type="button"
+              onClick={() => i18n.changeLanguage("ar")}
+              className={`px-3 py-1 rounded text-sm font-medium border ${
+                i18n.language === "ar" ? "text-white" : "text-[#1B6B8A]"
+              }`}
+              style={{
+                backgroundColor: i18n.language === "ar" ? "#1B6B8A" : "#ffffff",
+                borderColor: "#b0d4dc",
+              }}
+            >
+              {t("arabic")}
+            </button>
+          </div>
+
+          {isAuthenticated && <ProfileDropdown />}
         </div>
       </header>
 

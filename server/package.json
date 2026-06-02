@@ -5,15 +5,24 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "dev": "node --env-file=.env index.js"
+    "dev": "node --env-file=.env index.js",
+    "db:migrate": "npx prisma migrate dev",
+    "db:generate": "npx prisma generate",
+    "db:studio": "npx prisma studio"
   },
   "dependencies": {
     "@google/genai": "^1.41.0",
+    "@prisma/client": "^7.8.0",
     "@xenova/transformers": "^2.17.2",
+    "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "dynamic-survey-prototype": "file:..",
     "express": "^4.19.2",
-    "pdf-parse": "^1.1.1"
+    "jsonwebtoken": "^9.0.2",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.21.0",
+    "prisma": "^7.8.0",
+    "socket.io": "^4.7.5"
   }
 }

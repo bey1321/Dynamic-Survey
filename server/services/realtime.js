@@ -1,12 +1,5 @@
 import jwt from 'jsonwebtoken'
 
-/**
- * Wires all Socket.io event handlers onto the io instance.
- * Called once from index.js after the server starts.
- *
- * Room model: one Socket.io room per surveyId.
- * Presence: surveyId -> Map<socketId, identity>
- */
 export const initRealtime = (io) => {
   const rooms = new Map()
 
@@ -14,7 +7,6 @@ export const initRealtime = (io) => {
     Array.from((rooms.get(surveyId) ?? new Map()).values())
 
   io.on('connection', (socket) => {
-    // Identify the connecting user via the JWT passed during handshake
     let currentUser = null
     const token = socket.handshake.auth?.token
     if (token) {
@@ -29,8 +21,6 @@ export const initRealtime = (io) => {
       username: currentUser?.username ?? 'Guest',
     }
 
-    // ── join_survey ───────────────────────────────────────────────────────────
-    // Emitted by the client when a survey page is opened.
     socket.on('join_survey', (surveyId) => {
       socket.join(surveyId)
       if (!rooms.has(surveyId)) rooms.set(surveyId, new Map())
@@ -40,8 +30,6 @@ export const initRealtime = (io) => {
       socket.to(surveyId).emit('user_joined', identity)
     })
 
-    // ── survey_updated ────────────────────────────────────────────────────────
-    // Emitted after a save so all other open tabs/browsers reload instantly.
     socket.on('survey_updated', ({ surveyId, data }) => {
       socket.to(surveyId).emit('survey_updated', {
         updatedBy: identity.username,
@@ -50,8 +38,6 @@ export const initRealtime = (io) => {
       })
     })
 
-    // ── cursor_move ───────────────────────────────────────────────────────────
-    // Optional: shows collaborators which question someone is currently editing.
     socket.on('cursor_move', ({ surveyId, position }) => {
       socket.to(surveyId).emit('cursor_move', {
         userId:   identity.userId,
@@ -60,10 +46,8 @@ export const initRealtime = (io) => {
       })
     })
 
-    // ── leave_survey ──────────────────────────────────────────────────────────
     socket.on('leave_survey', (surveyId) => leaveRoom(socket, surveyId))
 
-    // ── disconnect ────────────────────────────────────────────────────────────
     socket.on('disconnect', () => {
       for (const surveyId of rooms.keys()) {
         if (rooms.get(surveyId).has(socket.id)) leaveRoom(socket, surveyId)

@@ -1,10 +1,46 @@
 import { Router } from 'express'
-import { randomBytes } from 'crypto'
+import { randomBytes, randomUUID } from 'crypto'
 import pool from '../services/db.js'
 import { authenticate, optionalAuth } from '../middleware/auth.js'
 
-// ── Public router — no login required ─────────────────────────────────────────
+// Public router — no login required
 export const publicRouter = Router()
+
+// POST /api/shared/:token/accept — authenticated user accepts an EDIT share link,
+// registering themselves as a collaborator so they can save changes.
+publicRouter.post('/:token/accept', authenticate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT sh.*, s.owner_id
+       FROM survey_shares sh
+       JOIN surveys s ON s.id = sh.survey_id
+       WHERE sh.share_token = $1`,
+      [req.params.token]
+    )
+
+    const share = rows[0]
+    if (!share || !share.is_active)
+      return res.status(404).json({ error: 'Share link not found or has been revoked' })
+    if (share.expires_at && new Date(share.expires_at) < new Date())
+      return res.status(410).json({ error: 'This share link has expired' })
+    if (share.permission !== 'EDIT')
+      return res.status(403).json({ error: 'This share link does not grant edit access' })
+    if (share.owner_id === req.user.id)
+      return res.status(400).json({ error: 'You are the owner of this survey' })
+
+    await pool.query(
+      `INSERT INTO survey_collaborators (survey_id, user_id, permission, invited_by)
+       VALUES ($1, $2, 'EDIT', $3)
+       ON CONFLICT (survey_id, user_id) DO UPDATE SET permission = 'EDIT'`,
+      [share.survey_id, req.user.id, share.created_by]
+    )
+
+    res.json({ surveyId: share.survey_id })
+  } catch (err) {
+    console.error('[shared/accept]', err)
+    res.status(500).json({ error: 'Failed to accept share' })
+  }
+})
 
 publicRouter.get('/:token', optionalAuth, async (req, res) => {
   try {
@@ -42,7 +78,7 @@ publicRouter.get('/:token', optionalAuth, async (req, res) => {
   }
 })
 
-// ── Protected router — survey owner manages share links ────────────────────────
+// Protected router — survey owner manages share links
 const router = Router({ mergeParams: true })
 router.use(authenticate)
 
@@ -88,9 +124,9 @@ router.post('/', async (req, res) => {
       : null
 
     const { rows } = await pool.query(
-      `INSERT INTO survey_shares (survey_id, share_token, permission, created_by, expires_at)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [req.params.id, randomBytes(32).toString('hex'), permission, req.user.id, expiresAt]
+      `INSERT INTO survey_shares (id, survey_id, share_token, permission, created_by, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [randomUUID(), req.params.id, randomBytes(32).toString('hex'), permission, req.user.id, expiresAt]
     )
     res.status(201).json(rows[0])
   } catch (err) {

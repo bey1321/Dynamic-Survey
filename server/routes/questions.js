@@ -4,7 +4,7 @@ import { evaluateQuestions, needRegeneration, buildRegenerationFeedback } from "
 
 const router = express.Router();
 
-const MAX_REGEN_ATTEMPTS = 2;
+const MAX_REGEN_ATTEMPTS = 1;
 
 router.post("/generate-questions", async (req, res) => {
   const { surveyDraft, variableModel, previousQuestions } = req.body || {};
@@ -14,8 +14,8 @@ router.post("/generate-questions", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  function emitStage(stage, message) {
-    res.write(`data: ${JSON.stringify({ type: "stage", stage, message })}\n\n`);
+  function emitStage(stageKey, params = {}) {
+    res.write(`data: ${JSON.stringify({ type: "stage", stageKey, params })}\n\n`);
   }
 
   function emitDone(payload) {
@@ -29,11 +29,11 @@ router.post("/generate-questions", async (req, res) => {
   }
 
   try {
-    emitStage("Input Analysis", "Parsing survey topic, goals, and variable model…");
+    emitStage("inputAnalysis");
     const topic = surveyDraft?.goal || surveyDraft?.title || "general survey";
     console.log(`\n🚀 [PIPELINE START] Topic: "${topic}"`);
 
-    emitStage("Draft Generation", "Generating initial question set from survey specification…");
+    emitStage("draftGeneration");
     let currentResult = await callGeminiForQuestions(surveyDraft, variableModel, previousQuestions, "Question Generation [Attempt 1]");
 
     if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) {
@@ -46,8 +46,8 @@ router.post("/generate-questions", async (req, res) => {
     let attemptsMade = 0;
     let regenerated = false;
 
-    function countIssues(evals) {
-      let count = 0;
+    function countIssues(evals, coverageIssues = []) {
+      let count = coverageIssues.length;
       for (const e of evals) {
         const avgLLM = (e.llm_scores.clarity + e.llm_scores.neutrality + e.llm_scores.answerability + e.llm_scores.relevance) / 4;
         if (avgLLM < 3.0) count++;
@@ -68,15 +68,12 @@ router.post("/generate-questions", async (req, res) => {
         attemptsMade = attempt;
 
         const qCount = currentResult.questions.length;
-        emitStage(
-          "Internal Review",
-          `Evaluating ${qCount} question${qCount !== 1 ? "s" : ""} for clarity, neutrality, relevance, and bias…`
-        );
+        emitStage("internalReview", { count: qCount });
         console.log(`\n🔍 [EVALUATION] Attempt ${attempt}/${MAX_REGEN_ATTEMPTS} — evaluating ${qCount} questions`);
         const { results: evals, coverageIssues } = await evaluateQuestions(
           topic, currentResult.questions, callGemini, variableModel, surveyDraft?.language
         );
-        const issueCount = countIssues(evals);
+        const issueCount = countIssues(evals, coverageIssues);
         const regen = needRegeneration(evals, {}, coverageIssues);
 
         console.log(`   Issues found : ${issueCount}`);
@@ -89,6 +86,11 @@ router.post("/generate-questions", async (req, res) => {
           console.log(`   ⭐ New best result saved (${issueCount} issue(s))`);
         }
 
+        if (issueCount === 0) {
+          console.log(`   ✅ No issues found — stopping early`);
+          break;
+        }
+
         if (!regen) {
           console.log(`   ✅ Quality threshold met — stopping early`);
           break;
@@ -99,10 +101,7 @@ router.post("/generate-questions", async (req, res) => {
           break;
         }
 
-        emitStage(
-          "Refinement",
-          `${issueCount} issue${issueCount !== 1 ? "s" : ""} detected — regenerating with targeted feedback…`
-        );
+        emitStage("refinement", { count: issueCount });
         console.log(`\n♻️  [REGENERATION] Attempt ${attempt + 1}/${MAX_REGEN_ATTEMPTS} — regenerating with feedback`);
         const feedback = buildRegenerationFeedback(evals, topic, coverageIssues);
         currentResult = await callGeminiForQuestions({ ...surveyDraft, feedback }, variableModel, previousQuestions, `Question Regeneration [Attempt ${attempt + 1}]`);
@@ -111,12 +110,12 @@ router.post("/generate-questions", async (req, res) => {
         if (!Array.isArray(currentResult.questions) || currentResult.questions.length === 0) break;
       }
 
-      emitStage("Final Approval", "Quality checks passed — preparing final question set…");
+      emitStage("finalApprovalPassed");
       return emitDone({ ...bestResult, evaluations: bestEvals, regenerated, attemptsMade });
 
     } catch (evalErr) {
       console.error("Evaluation loop failed, returning questions without eval:", evalErr);
-      emitStage("Final Approval", "Evaluation skipped — returning generated questions…");
+      emitStage("finalApprovalSkipped");
       return emitDone(currentResult);
     }
 

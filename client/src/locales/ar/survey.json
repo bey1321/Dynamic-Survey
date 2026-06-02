@@ -90,6 +90,22 @@
   "qualityReportShort": "تقرير الجودة",
 
   "stageLabel": "المرحلة",
+  "stageName": {
+    "inputAnalysis": "تحليل المدخلات",
+    "draftGeneration": "إنشاء المسودة",
+    "internalReview": "المراجعة الداخلية",
+    "refinement": "التحسين",
+    "finalApprovalPassed": "الموافقة النهائية",
+    "finalApprovalSkipped": "الموافقة النهائية"
+  },
+  "stageMsg": {
+    "inputAnalysis": "جارٍ تحليل موضوع الاستبيان وأهدافه ونموذج المتغيرات…",
+    "draftGeneration": "جارٍ إنشاء مجموعة الأسئلة الأولية وفق مواصفات الاستبيان…",
+    "internalReview": "جارٍ تقييم {{count}} سؤال للوضوح والحيادية والملاءمة وغياب التحيز…",
+    "refinement": "تم رصد {{count}} مشكلة — جارٍ إعادة الإنشاء بملاحظات مستهدفة…",
+    "finalApprovalPassed": "اجتازت الأسئلة فحوصات الجودة — جارٍ تجهيز مجموعة الأسئلة النهائية…",
+    "finalApprovalSkipped": "تم تخطي التقييم — جارٍ إرجاع الأسئلة المُنشأة…"
+  },
   "noQuestionsYet": "لا توجد أسئلة بعد.",
   "addQuestion": "+ إضافة سؤال",
   "toStartBuildingSurveyManually": "في الأعلى لبدء بناء الاستبيان يدويًا.",

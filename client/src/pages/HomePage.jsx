@@ -1,21 +1,32 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import rakscLogo from "../assets/raksc-logo.png";
 import { useSurvey } from "../state/SurveyContext";
+import { useAuth } from "../state/AuthContext";
+import ProfileDropdown from "../components/ProfileDropdown";
 
 export default function HomePage() {
   const navigate = useNavigate();
   const { initScratchMode } = useSurvey();
   const { t, i18n } = useTranslation(["survey"]);
+  const { isAuthenticated } = useAuth();
 
   const isArabic = i18n.language === "ar";
 
   const handleCreateWithAI = () => {
+    if (!isAuthenticated) {
+      navigate("/login");
+      return;
+    }
     navigate("/survey/step/1-create", { state: { mode: "ai" } });
   };
 
   const handleCreateFromScratch = () => {
+    if (!isAuthenticated) {
+      navigate("/login");
+      return;
+    }
     initScratchMode();
     navigate("/survey/step/3-questions");
   };
@@ -32,25 +43,59 @@ export default function HomePage() {
             <img src={rakscLogo} alt="RAK Statistics Logo" className="h-14 w-auto object-contain" />
           </div>
 
-          {/* Language Toggle */}
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <button
-              onClick={() => i18n.changeLanguage("en")}
-              className={`px-3 py-1 rounded-full ${
-                i18n.language === "en" ? "bg-[#1B6B8A] text-white" : "text-[#1B6B8A]"
-              }`}
-            >
-              English
-            </button>
+          {/* Right side: language toggle + auth */}
+          <div className="flex items-center gap-4 text-sm font-semibold">
+            {/* Language toggle */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => i18n.changeLanguage("en")}
+                className={`px-3 py-1 rounded-full ${
+                  i18n.language === "en" ? "bg-[#1B6B8A] text-white" : "text-[#1B6B8A]"
+                }`}
+              >
+                English
+              </button>
+              <button
+                onClick={() => i18n.changeLanguage("ar")}
+                className={`px-3 py-1 rounded-full ${
+                  i18n.language === "ar" ? "bg-[#1B6B8A] text-white" : "text-[#1B6B8A]"
+                }`}
+              >
+                العربية
+              </button>
+            </div>
 
-            <button
-              onClick={() => i18n.changeLanguage("ar")}
-              className={`px-3 py-1 rounded-full ${
-                i18n.language === "ar" ? "bg-[#1B6B8A] text-white" : "text-[#1B6B8A]"
-              }`}
-            >
-              العربية
-            </button>
+            {/* Auth controls */}
+            {isAuthenticated ? (
+              <ProfileDropdown />
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/login"
+                  className="px-4 py-1.5 rounded-full border-2 transition-colors duration-200"
+                  style={{ borderColor: "#1B6B8A", color: "#1B6B8A" }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "#1B6B8A";
+                    e.currentTarget.style.color = "#ffffff";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                    e.currentTarget.style.color = "#1B6B8A";
+                  }}
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/register"
+                  className="px-4 py-1.5 rounded-full text-white transition-colors duration-200 shadow"
+                  style={{ backgroundColor: "#1B6B8A" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#2AABBA")}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#1B6B8A")}
+                >
+                  Register
+                </Link>
+              </div>
+            )}
           </div>
         </nav>
 

@@ -3,6 +3,7 @@ import { HEALTHCARE_EXAMPLE_SURVEY } from "../../../shared/demoData.js";
 import { QUALITY_THRESHOLDS } from "../../../shared/constants";
 
 const STORAGE_KEY = "dynamicSurveyDemoState";
+const SURVEY_ID_KEY = "dynamicSurveySavedId";
 
 const SurveyContext = createContext(null);
 
@@ -87,6 +88,9 @@ export function SurveyProvider({ children }) {
   const [stepStatus, setStepStatus] = useState(() => loadInitialState().stepStatus);
   const [evaluations, setEvaluations] = useState(() => loadInitialState().evaluations || []);
   const [surveyMode, setSurveyMode] = useState("ai");
+  const [savedSurveyId, setSavedSurveyId] = useState(() => {
+    try { return window.localStorage.getItem(SURVEY_ID_KEY) || null; } catch { return null; }
+  });
 
   useEffect(() => {
     const payload = JSON.stringify({
@@ -101,6 +105,13 @@ export function SurveyProvider({ children }) {
     } catch {
     }
   }, [surveyDraft, variableModel, questionsState, stepStatus, evaluations]);
+
+  useEffect(() => {
+    try {
+      if (savedSurveyId) window.localStorage.setItem(SURVEY_ID_KEY, savedSurveyId);
+      else window.localStorage.removeItem(SURVEY_ID_KEY);
+    } catch {}
+  }, [savedSurveyId]);
 
   const globalStatus = useMemo(() => {
     if (variableModel.approvedVersion > 0) {
@@ -145,6 +156,7 @@ export function SurveyProvider({ children }) {
       setVariableModel(defaultVariableModelState);
       setQuestionsState(defaultQuestionsState);
       setEvaluations([]);
+      setSavedSurveyId(null);
     }
     if (mode === "scratch") {
       setStepStatus((prev) => ({
@@ -280,13 +292,61 @@ export function SurveyProvider({ children }) {
     }));
   }
 
+  function loadFromSnapshot(snapshot, surveyId = null) {
+    if (!snapshot) return;
+    if (surveyId) setSavedSurveyId(surveyId);
+
+    // surveyDraft is the same in both formats
+    if (snapshot.surveyDraft) {
+      setSurveyDraft({ ...defaultSurveyDraft, ...snapshot.surveyDraft });
+    }
+
+    // variableModel:
+    //   DB format  → snapshot.variableModel is the raw model { dependent, drivers, controls }
+    //   ctx format → snapshot.variableModel is { model: {...}, status, approvedVersion, … }
+    if (snapshot.variableModel) {
+      if (snapshot.variableModel.model !== undefined) {
+        setVariableModel({ ...defaultVariableModelState, ...snapshot.variableModel });
+      } else {
+        setVariableModel({ ...defaultVariableModelState, model: snapshot.variableModel, status: 'Generated' });
+      }
+    }
+
+    // questions:
+    //   DB format  → snapshot.questions is the raw array
+    //   ctx format → snapshot.questionsState is { questions: [], status, … }
+    if (Array.isArray(snapshot.questions)) {
+      setQuestionsState({ ...defaultQuestionsState, questions: snapshot.questions, status: 'Generated' });
+    } else if (snapshot.questionsState) {
+      setQuestionsState({ ...defaultQuestionsState, ...snapshot.questionsState });
+    }
+
+    // stepStatus:
+    //   DB format doesn't include it — infer from what was saved
+    if (snapshot.stepStatus) {
+      setStepStatus({ ...defaultStepStatus, ...snapshot.stepStatus });
+    } else {
+      setStepStatus({
+        ...defaultStepStatus,
+        1: 'completed',
+        2: snapshot.variableModel ? 'completed' : 'skipped',
+        3: 'unlocked',
+      });
+    }
+
+    if (snapshot.evaluations) setEvaluations(snapshot.evaluations);
+    if (snapshot.surveyMode)  setSurveyMode(snapshot.surveyMode);
+  }
+
   function resetDemoData() {
     setSurveyDraft(defaultSurveyDraft);
     setVariableModel(defaultVariableModelState);
     setQuestionsState(defaultQuestionsState);
     setStepStatus(defaultStepStatus);
+    setSavedSurveyId(null);
     try {
       window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(SURVEY_ID_KEY);
     } catch {
     }
   }
@@ -325,6 +385,8 @@ export function SurveyProvider({ children }) {
     surveyMode,
     setSurveyMode,
     setEvaluations,
+    savedSurveyId,
+    setSavedSurveyId,
     saveSurveyDraft,
     loadHealthcareExample,
     setVariableModelFromAI,
@@ -334,6 +396,7 @@ export function SurveyProvider({ children }) {
     approveQuestions,
     completeQualityCheck,
     initScratchMode,
+    loadFromSnapshot,
     resetDemoData,
     isStepUnlocked,
     hasEvaluationIssues

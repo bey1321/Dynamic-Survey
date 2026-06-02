@@ -90,6 +90,22 @@
   "qualityReportShort": "Quality Report",
 
   "stageLabel": "Stage",
+  "stageName": {
+    "inputAnalysis": "Input Analysis",
+    "draftGeneration": "Draft Generation",
+    "internalReview": "Internal Review",
+    "refinement": "Refinement",
+    "finalApprovalPassed": "Final Approval",
+    "finalApprovalSkipped": "Final Approval"
+  },
+  "stageMsg": {
+    "inputAnalysis": "Parsing survey topic, goals, and variable model…",
+    "draftGeneration": "Generating initial question set from survey specification…",
+    "internalReview": "Evaluating {{count}} question(s) for clarity, neutrality, relevance, and bias…",
+    "refinement": "{{count}} issue(s) detected — regenerating with targeted feedback…",
+    "finalApprovalPassed": "Quality checks passed — preparing final question set…",
+    "finalApprovalSkipped": "Evaluation skipped — returning generated questions…"
+  },
   "noQuestionsYet": "No questions yet.",
   "addQuestion": "+ Add Question",
   "toStartBuildingSurveyManually": "above to start building your survey manually.",
