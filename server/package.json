@@ -6,6 +6,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "node --env-file=.env index.js",
+    "dev:docker": "node --watch index.js",
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate",
     "db:studio": "npx prisma studio"

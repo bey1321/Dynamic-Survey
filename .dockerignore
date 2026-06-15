@@ -1,7 +1,7 @@
-# Dependencies — rebuilt inside the image
+# Dependencies — installed inside the image
 **/node_modules
 
-# Build artifacts — client is built inside the image
+# Build artifacts
 client/dist
 
 # Local environment files — pass secrets via docker run -e or --env-file

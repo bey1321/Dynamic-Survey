@@ -5,6 +5,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-survey}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-survey}
       POSTGRES_DB: ${POSTGRES_DB:-survey_db}
+    ports:
+      # Exposed so devs can connect with pgAdmin, DBeaver, psql, etc. from the host
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -13,20 +16,43 @@ services:
       timeout: 5s
       retries: 10
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
   app:
     build: .
     ports:
       - "${PORT:-4000}:4000"
+      - "${CLIENT_PORT:-5173}:5173"
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       DATABASE_URL: postgresql://${POSTGRES_USER:-survey}:${POSTGRES_PASSWORD:-survey}@postgres:5432/${POSTGRES_DB:-survey_db}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and fill it in}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required — copy .env.example to .env and fill it in}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+    volumes:
+      - ./server:/app/server
+      - ./client:/app/client
+      - ./shared:/app/shared
+      - server_node_modules:/app/server/node_modules
+      - client_node_modules:/app/client/node_modules
+      - root_node_modules:/app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
 
 volumes:
   postgres_data:
+  pgadmin_data:
+  server_node_modules:
+  client_node_modules:
+  root_node_modules:

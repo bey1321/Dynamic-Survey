@@ -93,7 +93,7 @@ This starts both the client (`http://localhost:5173`) and the API server (`http:
 
 ## 🐳 Docker
 
-The Docker setup is fully self-contained — PostgreSQL is included as a service. A two-stage Dockerfile compiles the React client at build time and serves everything from a single Express server. Database migrations run automatically on every container start.
+The Docker setup is a **development environment** — PostgreSQL and pgAdmin are included as services, and your local `server/`, `client/`, and `shared/` source folders are bind-mounted into the app container for hot reload (Vite dev server + `node --watch`). Database migrations run automatically on every container start.
 
 ### 1. Configure Environment
 
@@ -118,12 +118,13 @@ docker compose up --build
 
 That's it. Compose will:
 1. Pull and start a PostgreSQL 16 container
-2. Build the app image (React client + Express server)
-3. Wait for Postgres to pass its healthcheck
-4. Run `prisma migrate deploy` to apply any pending migrations
-5. Start the server on **http://localhost:4000**
+2. Start a pgAdmin container for inspecting the database
+3. Build the app image and install dependencies (root, server, client)
+4. Wait for Postgres to pass its healthcheck
+5. Run `prisma migrate deploy` to apply any pending migrations
+6. Start the Express server (with `--watch`) on **http://localhost:4000** and the Vite dev server on **http://localhost:5173**
 
-Data is persisted in a named Docker volume (`postgres_data`) so it survives container restarts.
+Data is persisted in named Docker volumes (`postgres_data`, `pgadmin_data`) so it survives container restarts. Code changes on your host are picked up automatically — no rebuild needed unless you change a `package.json`.
 
 ### Subsequent starts (no code changes)
 
@@ -143,6 +144,12 @@ To also delete the database volume:
 docker compose down -v
 ```
 
+### Accessing the database
+
+Postgres is exposed on the host at `localhost:5432` (configurable via `POSTGRES_PORT`), so you can connect with any DB client — pgAdmin, a VS Code database extension, DBeaver, `psql`, etc. — using the `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` values from your `.env`.
+
+A pgAdmin instance is also included at **http://localhost:5050** (login with `PGADMIN_EMAIL` / `PGADMIN_PASSWORD`, default `admin@example.com` / `admin`). Add a new server connection there using host `postgres`, port `5432`, and your Postgres credentials.
+
 ---
 
 ## 🔧 Environment Variables
@@ -154,10 +161,15 @@ docker compose down -v
 | `POSTGRES_USER` | No | `survey` | PostgreSQL username |
 | `POSTGRES_PASSWORD` | Yes | — | PostgreSQL password |
 | `POSTGRES_DB` | No | `survey_db` | PostgreSQL database name |
+| `POSTGRES_PORT` | No | `5432` | Host port mapped to Postgres (for DB clients) |
+| `PGADMIN_EMAIL` | No | `admin@example.com` | pgAdmin login email |
+| `PGADMIN_PASSWORD` | No | `admin` | pgAdmin login password |
+| `PGADMIN_PORT` | No | `5050` | Host port mapped to pgAdmin |
 | `JWT_SECRET` | Yes | — | Secret used to sign and verify JWT tokens |
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
 | `OPENROUTER_MODEL` | No | _(empty)_ | Model to use via OpenRouter |
-| `PORT` | No | `4000` | Host port mapped to the app container |
+| `PORT` | No | `4000` | Host port mapped to the Express server |
+| `CLIENT_PORT` | No | `5173` | Host port mapped to the Vite dev server |
 
 ### Local dev (`server/.env`)
 

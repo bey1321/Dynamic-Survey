@@ -1,45 +1,35 @@
-# ─── Stage 1: Build the React client ────────────────────────────────────────
-FROM node:22-bookworm-slim AS client-builder
+# ─── Development image ───────────────────────────────────────────────────────
+# Runs the client (Vite dev server) and server (with --watch) side by side.
+# Source code is bind-mounted by docker-compose, so this image only needs to
+# pre-install dependencies and generate the Prisma client.
+FROM node:22-bookworm-slim
 WORKDIR /app
 
-# Copy workspace root (needed for the "file:.." shared dependency)
-COPY package.json ./
+# Install root dependencies (concurrently)
+COPY package.json package-lock.json ./
+RUN npm install
+
+# Copy shared module
 COPY shared/ ./shared/
+
+# Install server dependencies
+COPY server/package.json server/package-lock.json ./server/
+RUN npm install --prefix server
 
 # Install client dependencies
 COPY client/package.json client/package-lock.json ./client/
 RUN npm install --prefix client
 
-# Build the production bundle
-COPY client/ ./client/
-RUN npm run build --prefix client
-
-# ─── Stage 2: Production server ──────────────────────────────────────────────
-FROM node:22-bookworm-slim
-WORKDIR /app
-
-# Copy workspace root and shared module
-COPY package.json ./
-COPY shared/ ./shared/
-
-# Install server production dependencies
-COPY server/package.json server/package-lock.json ./server/
-RUN npm install --prefix server
-
-# Copy server source (includes prisma/ schema and prisma.config.ts)
-COPY server/ ./server/
+# Copy source
+COPY . .
 
 # Generate Prisma Client
 RUN cd /app/server && npx prisma generate
 
-# Copy built client assets from Stage 1
-COPY --from=client-builder /app/client/dist ./client/dist
+ENV NODE_ENV=development
 
-EXPOSE 4000
+EXPOSE 4000 5173
 
-ENV NODE_ENV=production
-
-WORKDIR /app/server
-
-# Run migrations then start — DATABASE_URL is injected by docker-compose at runtime
-CMD ["sh", "-c", "npx prisma migrate deploy && node index.js"]
+# Apply pending migrations then start both dev servers — DATABASE_URL is
+# injected by docker-compose at runtime
+CMD ["sh", "-c", "cd server && npx prisma migrate deploy; cd .. && npm run dev:docker"]

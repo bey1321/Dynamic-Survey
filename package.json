@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:docker": "concurrently \"npm run dev:docker --prefix server\" \"npm run dev:docker --prefix client\"",
     "install:all": "npm install --prefix client && npm install --prefix server"
   },
   "dependencies": {
